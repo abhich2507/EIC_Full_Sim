@@ -1,0 +1,1 @@
+edm4hep2json -n 5 /work/eic/users/aabhishe/EIC_3He_5x41_bc.hepmc3.tree_sim_output.root -o /work/eic/users/aabhishe/5x41.json

@@ -1,0 +1,1 @@
+abconv -p ip6_eau_41x5 /work/eic/users/aabhishe/EIC_3He_5x41.root -o /work/eic/users/aabhishe/EIC_3He_5x41_bc 
