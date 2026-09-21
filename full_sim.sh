@@ -45,7 +45,7 @@ AFTERBURNER_FILE="${AB_PREFIX}.hepmc3.tree.root"
 SIM_FILE="${AB_PREFIX}.hepmc3.tree_sim_output.root"
 RECON_FILE="${AB_PREFIX}.hepmc3.tree_sim_output_recon.root"
 COMPACT_FILE="$DETECTOR_PATH/epic_craterlake_5x41_He3.xml"
-NEVENTS=1000
+NEVENTS=10000
 
 # 4. Execute Selected Steps
 
