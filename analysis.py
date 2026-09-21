@@ -4,13 +4,9 @@ import vector
 import numpy as np
 import ROOT
 
-# 1. Use a wildcard (*) to match all chunk files from 0 to 9.
-# Be sure to provide the full absolute path to the directory where these files live.
 file_pattern = "/work/eic/users/aabhishe/EIC_3He_5x41_XRot_pi_bc_recon_chunk_*.root:events"
 
-# 2. Concatenate all matching files. 
-# Using filter_name ensures we only load the required branches into RAM, 
-# preventing out-of-memory errors when processing many files at once.
+
 events = uproot.concatenate(
     file_pattern,
     filter_name=[
@@ -23,14 +19,13 @@ events = uproot.concatenate(
     ]
 )
 
-# 3. Read arrays directly from the concatenated events block
-# (Notice we no longer need to call .array() at the end of each line)
+
 e_prime_pdg_arrays = events["ReconstructedChargedParticles.PDG"]
 mc_pdg_arrays = events["MCParticles.PDG"]
 mc_gen_status = events["MCParticles.generatorStatus"]
 
 e_beam_energy = 5.0
-p_beam_energy = 41.0*3.0 
+p_beam_energy = 41.0*3.0 # total energy here 
 A = 3.0  # Mass number for Helium-3
 
 # Apply masks
@@ -61,17 +56,17 @@ p_beam_E = np.sqrt(p_beam_px**2 + p_beam_py**2 + p_beam_pz**2 + (2.8084)**2)  # 
 e_beam = vector.zip({"px": e_beam_px, "py": e_beam_py, "pz": e_beam_pz, "E": e_beam_E})
 e_prime = vector.zip({"px": e_prime_px, "py": e_prime_py, "pz": e_prime_pz, "E": e_prime_E})
 p_beam = vector.zip({"px": p_beam_px, "py": p_beam_py, "pz": p_beam_pz, "E": p_beam_E})
-p_beam= p_beam/A
+p_beam= p_beam/A # using per nucleon momentum for Helium-3
 
 # Sort and extract single leading particles
 sorted_indices = ak.argsort(e_prime.E, ascending=False)
 e_prime_sorted = e_prime[sorted_indices]
 
-e_beam_single = ak.firsts(e_beam)
+e_beam_single = ak.firsts(e_beam) # change from lists of sublists to lists of single values
 p_beam_single = ak.firsts(p_beam)
 e_prime_leading = ak.firsts(e_prime_sorted)
 
-# Calculate kinematics
+#  kinematics
 q = e_beam_single - e_prime_leading
 Q2 = -q.mass2
 
