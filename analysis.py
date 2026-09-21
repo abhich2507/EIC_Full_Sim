@@ -5,7 +5,8 @@ import numpy as np
 import ROOT
 
 file_pattern = "/work/eic/users/aabhishe/EIC_3He_5x41_XRot_pi_bc_recon_chunk_*.root:events"
-
+output_file = "/home/aabhishe/eic/EIC_Full_Sim/Plots/Q2_x_distributions.root"
+out = ROOT.TFile(output_file, "RECREATE")
 
 events = uproot.concatenate(
     file_pattern,
@@ -84,21 +85,36 @@ x_clean = ak.to_numpy(ak.drop_none(x)).astype(np.float64)
 Q2_bin_edges = np.logspace(0, 3, 101)  # 100 bins from 10^-2 to 10^2
 
 Q2_hist = ROOT.TH1F("his1", "Q2 Distribution; Q2 [GeV^2]; Events", len(Q2_bin_edges) - 1, Q2_bin_edges)
-xbj_bin_edges = np.logspace(-4, 0, 101)  # 100 bins from 10^-4 to 10^-1
+xbin_edges = np.logspace(-4, 0, 101)  # 100 bins from 10^-4 to 10^-1
 
-x_hist = ROOT.TH1F("his2", "Bjorken x Distribution; x; Events", len(xbj_bin_edges) - 1, xbj_bin_edges)
+x_hist = ROOT.TH1F("his2", "Bjorken x Distribution; x; Events", len(xbin_edges) - 1, xbin_edges)
+
+Q2_x_hist = ROOT.TH2F("his3", "Q2 vs x Distribution; x; Q2 [GeV^2]", len(xbin_edges) - 1, xbin_edges, len(Q2_bin_edges) - 1, Q2_bin_edges)
 
 Q2_hist.FillN(len(Q2_clean), Q2_clean, np.ones(len(Q2_clean), dtype=np.float64))
 x_hist.FillN(len(x_clean), x_clean, np.ones(len(x_clean), dtype=np.float64))
+Q2_x_hist.FillN(len(x_clean), x_clean, Q2_clean, np.ones(len(Q2_clean), dtype=np.float64))
 canvas= ROOT.TCanvas("canvas", "Q2 and x Distributions", 800, 600)
-canvas.Divide(2, 1)
+canvas.Divide(2, 2)
 canvas.cd(1)
 ROOT.gPad.SetLogy()
 ROOT.gPad.SetLogx()
+x_hist.Scale(1.0 / x_hist.Integral())  
 x_hist.Draw()
 canvas.cd(2)
 ROOT.gPad.SetLogx()
 ROOT.gPad.SetLogy()
-
+Q2_hist.Scale(1.0 / Q2_hist.Integral())
 Q2_hist.Draw()
-canvas.SaveAs("/home/aabhishe/eic/EIC_Full_Sim/debug/Q2_x_distributions.pdf")
+canvas.cd(3)
+Q2_x_hist.Scale(1.0 / Q2_x_hist.Integral())
+Q2_x_hist.Draw("COLZ")
+
+canvas.SaveAs("/home/aabhishe/eic/EIC_Full_Sim/Plots/Q2_x_distributions.pdf")
+
+out.cd()
+x_hist.Write()
+Q2_hist.Write()
+Q2_x_hist.Write()
+out.Write()
+out.Close()
