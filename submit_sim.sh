@@ -26,7 +26,7 @@ AB_PREFIX="$1"
 WORKDIR="$(dirname "$AB_PREFIX")"   # directory to bind into the container
 
 # 2. Define chunking math based on the Slurm array ID
-EVENTS_PER_JOB=2000
+EVENTS_PER_JOB=1000
 SKIP_EVENTS=$(( SLURM_ARRAY_TASK_ID * EVENTS_PER_JOB ))
 
 AFTERBURNER_FILE="${AB_PREFIX}.hepmc3.tree.root"

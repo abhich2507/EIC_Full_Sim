@@ -86,7 +86,7 @@ q_mc = e_beam_single - e_prime_mc_leading
 Q2_mc = -q_mc.mass2
 x_mc = 3.0 * Q2_mc / (2.0 * p_beam_single.dot(q_mc))
 
-# Clean and convert for histogram filling
+
 Q2_clean = ak.to_numpy(ak.drop_none(Q2)).astype(np.float64)
 x_clean = ak.to_numpy(ak.drop_none(x)).astype(np.float64)
 Q2_mc_clean = ak.to_numpy(ak.drop_none(Q2_mc)).astype(np.float64)

@@ -10,127 +10,173 @@ ROOT.gStyle.SetPalette(ROOT.kViridis)
 os.makedirs("./Plots", exist_ok=True)
 
 DEUTERON = 1000010020
-path = "/work/eic/users/aabhishe/EIC_3He_5x41_XRot_pi_bc.hepmc3.tree_sim_output_recon.root"
-tree = uproot.open(f"{path}:events")
+
+# 1. Create an empty list to hold all the file paths
+file_list = []
+
+# 2. Loop from 0 to 9
+for i in range(10):
+    filename = f"/work/eic/users/aabhishe/sim_out_1M/EIC_3He_5x41_XRot_pi_bc_sim_chunk_{i}.root:events"
+    file_list.append(filename)
+
+print(f"Loading {len(file_list)} files...")
+
+# 3. Load them all into one massive data object
+tree = uproot.concatenate(file_list)
+
+# ==================================================================
+# ONE selection switch controls the denominator, the numerator AND the
+# histograms, so a panel can never show hits the printed number excluded.
+# ==================================================================
+SELECTION_MODE = "generated"     # "generated" | "all_deuterons"
+GEN_STATUS     = 1
+
+# Beam / frame constants for the RP differential block
+CROSSING_ANGLE = 0.025           # rad
+ROT_SIGN       = 1.0             # flip to +1.0 if theta_beam comes out ~25 mrad
+P_BEAM_D       = 82.0            # GeV, = 41 GeV/nucleon * A=2
 
 # ==================================================================
 # MC truth
 # ==================================================================
-mc_pdg    = tree["MCParticles.PDG"].array()
-mc_status = tree["MCParticles.generatorStatus"].array()
+mc_pdg    = tree["MCParticles.PDG"]
+mc_status = tree["MCParticles.generatorStatus"]
 
-GEN_STATUS = 1          # taken from gen 
-mc_is_gen_d = (mc_pdg == DEUTERON) & (mc_status == GEN_STATUS)
+if SELECTION_MODE == "generated":
+    mc_is_sig = (mc_pdg == DEUTERON) & (mc_status == GEN_STATUS)
+    SIG_LABEL = f"generated d (status=={GEN_STATUS})"
+elif SELECTION_MODE == "all_deuterons":
+    mc_is_sig = (mc_pdg == DEUTERON)
+    SIG_LABEL = "all d (any status)"
+else:
+    raise ValueError(f"unknown SELECTION_MODE {SELECTION_MODE!r}")
 
-# Global flat index bookkeeping: lets us deduplicate hits belonging to the
-# same MC particle and map "was hit" back onto the MCParticles collection.
 n_mc       = ak.to_numpy(ak.num(mc_pdg))
 offsets    = np.concatenate([[0], np.cumsum(n_mc)])[:-1]
 n_mc_total = int(n_mc.sum())
 
-flat_is_gen_d = ak.to_numpy(ak.flatten(mc_is_gen_d))
-n_gen_d       = int(flat_is_gen_d.sum())
+flat_is_sig = ak.to_numpy(ak.flatten(mc_is_sig))
+n_gen_d     = int(flat_is_sig.sum())
 
 # ------------------------------------------------------------------
-# generatorStatus audit.  EVERY acceptance below is divided by n_gen_d,
-# so if the generator tags the spectator deuteron as beam remnant (4) or
-# documentation (2/3) instead of final-state (1), every number is wrong by
-# the same factor.  Look at this table once, then fix GEN_STATUS.
+# generatorStatus audit -- every acceptance divides by n_gen_d
 # ------------------------------------------------------------------
 _d_status = ak.to_numpy(ak.flatten(mc_status[mc_pdg == DEUTERON]))
-print("[status] generatorStatus of all PDG 1000010020 in MCParticles:")
+print(f"[status] generatorStatus of all PDG {DEUTERON} in MCParticles:")
 if len(_d_status):
     for s, c in zip(*np.unique(_d_status, return_counts=True)):
-        flag = "  <-- used as denominator" if s == GEN_STATUS else ""
-        print(f"         status={int(s):<4d} n={int(c):<8d}{flag}")
+        note = "  (Geant4-produced secondary)" if s == 0 else ""
+        if SELECTION_MODE == "generated" and s == GEN_STATUS:
+            note = "  <-- used as denominator"
+        print(f"         status={int(s):<4d} n={int(c):<8d}{note}")
 else:
     print("         NONE FOUND - wrong PDG or wrong sample.")
-print(f"[status] n_gen_d = {n_gen_d}\n")
+print(f"[status] selection = {SELECTION_MODE!r} -> N_gen = {n_gen_d}\n")
+
+# Jagged mirror of flat_is_sig, aligned to MCParticles.
+mc_is_sig_jag = ak.unflatten(flat_is_sig, n_mc)
 
 
 # ==================================================================
 # Association validation
-#
-# Three assumptions are made when we do mc_pdg[assoc_index]; none are
-# guaranteed by the file format, so check them once per collection instead of
-# silently producing wrong PDGs:
-#
-#   (1) the association collection is index-parallel to the hit collection
-#       (one-to-one relation -> same number of entries per event),
-#   (2) every index is either the -1 "no link" sentinel or inside
-#       [0, n_MCParticles) *of that same event*,
-#   (3) the resulting frame is self-consistent: positions of SimTrackerHits are
-#       global-frame mm for every subdetector, so B0 / OMD / RP z-cuts are
-#       directly comparable numbers.
 # ==================================================================
 def validate_assoc(hit_coll, assoc_coll, verbose=True):
     """Check hit<->MC association integrity. Returns (idx, valid, safe)."""
-    idx    = tree[f"{assoc_coll}.index"].array()
-    n_hits = ak.num(tree[f"{hit_coll}.position.x"].array())
+    idx    = tree[f"{assoc_coll}.index"]
+    n_hits = ak.num(tree[f"{hit_coll}.position.x"])
     n_assc = ak.num(idx)
 
-    # (1) per-event parallelism between hits and associations
     n_bad_len = int(ak.sum(n_hits != n_assc))
     if n_bad_len:
         raise RuntimeError(
             f"{assoc_coll}: {n_bad_len} events where the association count "
             f"differs from the hit count -> the relation is NOT index-parallel "
-            f"to {hit_coll}. Boolean-masking the positions with a per-hit mask "
+            f"to {hit_coll}. Boolean-masking positions with a per-hit mask "
             f"is invalid for this collection."
         )
 
-    # (2) index bounds, evaluated against the MCParticles count of the SAME event
     in_range = (idx >= 0) & (idx < n_mc)
     n_neg    = int(ak.sum(idx < 0))
     n_over   = int(ak.sum(idx >= n_mc))
-    valid    = in_range
-    safe     = ak.where(valid, idx, 0)   # clamp so the gather never wraps
+    safe     = ak.where(in_range, idx, 0)
 
     if verbose:
         tot = int(ak.sum(n_assc))
         print(f"[assoc] {hit_coll:<22} hits={tot:<8d} "
               f"unlinked(-1)={n_neg:<6d} out-of-range={n_over:<6d} "
-              f"usable={int(ak.sum(valid)):d}")
+              f"usable={int(ak.sum(in_range)):d}")
         if n_over:
             print(f"        WARNING: {n_over} indices point outside MCParticles "
                   f"of their own event (cross-frame relation?). Dropped.")
-    return idx, valid, safe
+    return idx, in_range, safe
 
 
-def hit_pdg_and_mask(hit_coll, assoc_coll):
-    """Return (pdg per hit, deuteron mask per hit, valid-link mask, safe idx)."""
+def hit_masks(hit_coll, assoc_coll):
+    """Per-hit signal mask (PDG + status), used by BOTH acceptance and plots."""
     _, valid, safe = validate_assoc(hit_coll, assoc_coll)
-    pdg = ak.where(valid, mc_pdg[safe], 0)
-    return pdg, (pdg == DEUTERON) & valid, valid, safe
+
+    pdg      = ak.where(valid, mc_pdg[safe], 0)
+    pdg_mask = (pdg == DEUTERON) & valid
+    sig_mask = mc_is_sig_jag[safe] & valid
+
+    n_pdg, n_sig = int(ak.sum(pdg_mask)), int(ak.sum(sig_mask))
+    print(f"        deuteron hits: PDG-only={n_pdg:<6d} "
+          f"passing '{SIG_LABEL}'={n_sig:<6d} "
+          f"removed by status cut={n_pdg - n_sig:d}")
+    if n_pdg and not n_sig:
+        print(f"        *** all {n_pdg} deuteron hits here are linked to "
+              f"particles OUTSIDE the denominator -> acceptance is exactly 0 "
+              f"and the XY panels will be EMPTY (consistent, by design).")
+
+    return sig_mask, pdg_mask, safe
 
 
 def get_xyz(hit_coll, mask):
-    x = tree[f"{hit_coll}.position.x"].array()[mask]
-    y = tree[f"{hit_coll}.position.y"].array()[mask]
-    z = tree[f"{hit_coll}.position.z"].array()[mask]
+    x = tree[f"{hit_coll}.position.x"][mask]
+    y = tree[f"{hit_coll}.position.y"][mask]
+    z = tree[f"{hit_coll}.position.z"][mask]
     return x, y, z
 
 
 # ==================================================================
-# Station definitions -- ONE source of truth, used by BOTH the acceptance
-# and the plots, so the number printed on a canvas always refers to exactly
-# the hits drawn above it.  (lo, hi); None = open ended.
+# Station definitions -- ONE source of truth for the z-window AND the
+# drawing range.  Entry = (label, z_lo, z_hi, xbins, ybins)
+#   z_lo / z_hi : None = open ended
+#   xbins/ybins : (nbins, lo, hi), or None = auto-range from the data
 # ==================================================================
 STATIONS = {
-    "RP": [("Station 1 (z #approx 32.5 m)", None,  32600.),
-           ("Station 2 (z #approx 34.3 m)", 34200., None )],
-    "OMD": [("Station 1 (z #approx 25.6 m)", None,  25600.),
-            ("Station 2 (z #approx 26.9 m)", 26800., None )],
-    "B0": [("Layer 1 (z < 6.00 m)",     None,  6000.),
-           ("Layer 2 (6.10-6.30 m)",    6100., 6300.),
-           ("Layer 3 (6.40-6.50 m)",    6400., 6500.),
-           ("Layer 4 (z > 6.60 m)",     6600., None )],
+    "RP": [
+        ("Station 1 (z #approx 32.5 m)", None,  32600.,
+         (100, -1300., -950.), (100, -90., 90.)),
+        ("Station 2 (z #approx 34.3 m)", 34200., None,
+         (100, -1400., -1050.), (100, -90., 90.)),
+    ],
+    "OMD": [
+        ("Station 1 (z #approx 25.6 m)", None,  25600.,
+         (100, -1000., -850.), (100, -100., 100.)),
+        ("Station 2 (z #approx 26.9 m)", 26800., None,
+         (100, -1050., -940.), (100, -100., 100.)),
+    ],
+    # B0 ranges were never specified -> auto-range, shared across the 4 layers
+    # so the panels stay comparable to one another.
+    "B0": [
+        ("Layer 1 (z < 6.00 m)",  None,  6000., None, None),
+        ("Layer 2 (6.10-6.30 m)", 6100., 6300., None, None),
+        ("Layer 3 (6.40-6.50 m)", 6400., 6500., None, None),
+        ("Layer 4 (z > 6.60 m)",  6600., None,  None, None),
+    ],
 }
 
-# Coincidence requirement: N-of-M stations must fire.
-#   RP / OMD 2-of-2 -> two space points, the minimum for a local track angle.
-#   B0       3-of-4 -> curvature inside B0pf, tolerant of one dead layer.
+# Detectors whose auto-ranged panels should share ONE common range.
+SHARED_AUTO_RANGE = {"B0"}
+
 N_REQUIRED = {"RP": 2, "OMD": 2, "B0": 3}
+
+COLLS = {
+    "B0":  ("B0TrackerHits",          "_B0TrackerHits_particle"),
+    "OMD": ("ForwardOffMTrackerHits", "_ForwardOffMTrackerHits_particle"),
+    "RP":  ("ForwardRomanPotHits",    "_ForwardRomanPotHits_particle"),
+}
 
 
 def zmask(z, lo, hi):
@@ -142,43 +188,38 @@ def zmask(z, lo, hi):
 
 
 def particles_with_hit(safe, sel):
-    """Global per-MC-particle bool: >=1 selected hit. Collapses layer multiplicity."""
-    gidx = ak.to_numpy(ak.flatten(safe[sel] + offsets))
+    """Flat bool over MCParticles: particle produced >=1 selected hit."""
+    g = ak.to_numpy(ak.flatten(safe[sel] + offsets))
     out = np.zeros(n_mc_total, dtype=bool)
-    if len(gidx):
-        out[np.unique(gidx)] = True
+    if len(g):
+        out[np.unique(g)] = True
     return out
 
 
-def detector_acceptance(key, hit_coll, assoc_coll):
-    """Per-station bits -> inclusive and N-of-M coincidence acceptance."""
-    _, d_mask, _, safe = hit_pdg_and_mask(hit_coll, assoc_coll)
-    z_raw = tree[f"{hit_coll}.position.z"].array()
+# ==================================================================
+# Per-detector acceptance with in-detector coincidence
+# ==================================================================
+def detector_acceptance(key):
+    hit_coll, assoc_coll = COLLS[key]
+    sig_mask, _, safe = hit_masks(hit_coll, assoc_coll)
+    z = tree[f"{hit_coll}.position.z"]
 
-    per_station, station_counts = [], []
-    for _, lo, hi in STATIONS[key]:
-        bits = particles_with_hit(safe, d_mask & zmask(z_raw, lo, hi))
-        per_station.append(bits)
-        station_counts.append(int((bits & flat_is_gen_d).sum()))
+    bits, in_any = [], None
+    for (label, lo, hi, _xb, _yb) in STATIONS[key]:
+        zm  = zmask(z, lo, hi)
+        sel = sig_mask & zm
+        bits.append(particles_with_hit(safe, sel))
+        in_any = zm if in_any is None else (in_any | zm)
 
-    n_fired   = np.sum(np.stack(per_station), axis=0)      # stations hit per particle
-    incl_bits = (n_fired >= 1) & flat_is_gen_d
-    coin_bits = (n_fired >= N_REQUIRED[key]) & flat_is_gen_d
+    n_outside = int(ak.sum(sig_mask & ~in_any))
 
-    # hits landing in none of the windows -> would inflate an inclusive count
-    in_any = zmask(z_raw, None, STATIONS[key][0][2])
-    for _, lo, hi in STATIONS[key][1:]:
-        in_any = in_any | zmask(z_raw, lo, hi)
-    n_outside = int(ak.sum(d_mask & ~in_any))
+    n_fired    = np.sum(np.stack(bits), axis=0)
+    incl_bits  = (n_fired >= 1) & flat_is_sig
+    coin_bits  = (n_fired >= N_REQUIRED[key]) & flat_is_sig
 
     return {
-        "station_counts": station_counts,
-        "n_incl": int(incl_bits.sum()),
-        "n_coin": int(coin_bits.sum()),
-        "incl_bits": incl_bits,
-        "coin_bits": coin_bits,
-        "d_mask": d_mask,
-        "n_outside": n_outside,
+        "bits": bits, "incl": incl_bits, "coin": coin_bits,
+        "n_outside": n_outside, "sig_mask": sig_mask, "safe": safe,
     }
 
 
@@ -189,127 +230,109 @@ def binom_err(k, n):
     return np.sqrt(max(p * (1 - p), 0.0) / n)
 
 
-# ==================================================================
-# Run it
-# ==================================================================
-COLLS = {
-    "B0":  ("B0TrackerHits",          "_B0TrackerHits_particle"),
-    "OMD": ("ForwardOffMTrackerHits", "_ForwardOffMTrackerHits_particle"),
-    "RP":  ("ForwardRomanPotHits",    "_ForwardRomanPotHits_particle"),
-}
-
-RES = {}
-for key, (hc, ac) in COLLS.items():
-    RES[key] = detector_acceptance(key, hc, ac)
 print()
+RES = {}
+for key in ("B0", "OMD", "RP"):
+    RES[key] = detector_acceptance(key)
 
-print(f"Generated deuterons (status=={GEN_STATUS}) : {n_gen_d}\n")
+print()
 for key in ("B0", "OMD", "RP"):
     r = RES[key]
-    print(f"--- {key}  ({N_REQUIRED[key]}-of-{len(STATIONS[key])} coincidence) ---")
-    for (lbl, _, _), c in zip(STATIONS[key], r["station_counts"]):
-        a = c / n_gen_d if n_gen_d else 0.0
-        print(f"    {lbl:<30} {c:>8d}   A = {a:.5f}")
-    ai = r["n_incl"] / n_gen_d if n_gen_d else 0.0
-    ac_ = r["n_coin"] / n_gen_d if n_gen_d else 0.0
-    print(f"    {'inclusive (>=1 station)':<30} {r['n_incl']:>8d}   "
-          f"A = {ai:.5f} +/- {binom_err(r['n_incl'], n_gen_d):.5f}")
-    print(f"    {'coincidence':<30} {r['n_coin']:>8d}   "
-          f"A = {ac_:.5f} +/- {binom_err(r['n_coin'], n_gen_d):.5f}")
-    print(f"    reconstructable fraction A_coin/A_incl = "
-          f"{(r['n_coin']/r['n_incl'] if r['n_incl'] else 0.0):.5f}")
-    print(f"    deuteron hits outside all z-windows    = {r['n_outside']}")
-    tot = int(ak.sum(ak.num(r["d_mask"])))
-    sel = int(ak.sum(r["d_mask"]))
-    print(f"    deuteron hit purity = {sel}/{tot} = "
-          f"{(sel/tot if tot else 0.0):.3f}\n")
+    n_i, n_c = int(r["incl"].sum()), int(r["coin"].sum())
+    a_i = n_i / n_gen_d if n_gen_d else 0.0
+    a_c = n_c / n_gen_d if n_gen_d else 0.0
+    print(f"--- {key} ---  (N_gen = {n_gen_d}, '{SIG_LABEL}')")
+    for (label, *_), b in zip(STATIONS[key], r["bits"]):
+        n_s = int((b & flat_is_sig).sum())
+        print(f"    {label:<32} n={n_s:<7d} A={n_s/n_gen_d if n_gen_d else 0:.5f}")
+    print(f"    inclusive (>=1 station)          n={n_i:<7d} "
+          f"A={a_i:.5f} +/- {binom_err(n_i, n_gen_d):.5f}")
+    print(f"    coincidence ({N_REQUIRED[key]}-of-{len(STATIONS[key])})"
+          f"{'':<15} n={n_c:<7d} A={a_c:.5f} +/- {binom_err(n_c, n_gen_d):.5f}")
+    print(f"    coin/incl = {n_c/n_i if n_i else 0.0:.4f}   "
+          f"deuteron hits outside all z-windows = {r['n_outside']}\n")
 
-# ------------------------------------------------------------------
-# Cross-detector: the coincidence bits are per-particle booleans on the same
-# flat MCParticles axis, so they can be AND/OR-ed directly. This is why the
-# three acceptances above must never be added together.
-# ------------------------------------------------------------------
-cb = {k: RES[k]["coin_bits"] for k in RES}
+# Cross-detector correlations (never add acceptances -- AND/OR the bits)
 print("--- cross-detector (coincidence bits) ---")
 for a, b in (("B0", "OMD"), ("B0", "RP"), ("OMD", "RP")):
-    n = int((cb[a] & cb[b]).sum())
-    print(f"    {a} AND {b:<4}: {n:>8d}   A = {(n/n_gen_d if n_gen_d else 0):.5f}")
-n_any = int((cb["B0"] | cb["OMD"] | cb["RP"]).sum())
-print(f"    ANY of the three : {n_any:>8d}   "
-      f"A = {(n_any/n_gen_d if n_gen_d else 0):.5f}\n")
+    n_and = int((RES[a]["coin"] & RES[b]["coin"]).sum())
+    print(f"    {a} AND {b:<4} n={n_and:<7d} "
+          f"A={n_and/n_gen_d if n_gen_d else 0:.5f}")
+n_or = int((RES["B0"]["coin"] | RES["OMD"]["coin"] | RES["RP"]["coin"]).sum())
+print(f"    ANY of the three  n={n_or:<7d} "
+      f"A={n_or/n_gen_d if n_gen_d else 0:.5f}\n")
 
 
 # ==================================================================
-# XY occupancy maps (deuterons only), station windows identical to above
+# XY maps -- same sig_mask as the acceptance, per-station axis ranges
 # ==================================================================
-RANGES = {
-    "RP":  [((100, -1300., -950.),  (100, -90., 90.)),
-            ((100, -1400., -1050.), (100, -90., 90.))],
-    "OMD": [((100, -1000., -850.),  (100, -100., 100.)),
-            ((100, -1050., -940.),  (100, -100., 100.))],
-    "B0":  None,       # auto-ranged, shared across the four layers
-}
+def auto_range(vals, nbins=100, pad_frac=0.10, fallback=(-1.0, 1.0)):
+    if not len(vals):
+        return (nbins, fallback[0], fallback[1])
+    lo, hi = float(np.min(vals)), float(np.max(vals))
+    if hi - lo < 1e-6:
+        lo, hi = lo - 1.0, hi + 1.0
+    pad = pad_frac * (hi - lo)
+    return (nbins, lo - pad, hi + pad)
 
 
-def fill_histogram(name, title, x_arr, y_arr, mask, x_bins, y_bins):
-    x_vals = ak.to_numpy(ak.flatten(x_arr[mask])).astype(np.float64)
-    y_vals = ak.to_numpy(ak.flatten(y_arr[mask])).astype(np.float64)
+def station_hists(key):
+    hit_coll, _ = COLLS[key]
+    r = RES[key]
+    x, y, z = get_xyz(hit_coll, r["sig_mask"])
 
-    hist = ROOT.TH2F(name, title,
-                     x_bins[0], x_bins[1], x_bins[2],
-                     y_bins[0], y_bins[1], y_bins[2])
-    if len(x_vals):
-        hist.FillN(len(x_vals), x_vals, y_vals,
-                   np.ones(len(x_vals), dtype=np.float64))
-        print(f"  {name}: {len(x_vals)} deuteron hits, "
-              f"x=[{x_vals.min():.1f},{x_vals.max():.1f}] "
-              f"y=[{y_vals.min():.1f},{y_vals.max():.1f}]")
-    else:
-        print(f"  {name}: empty")
-    hist.GetXaxis().SetTitle("X Position [mm]")
-    hist.GetYaxis().SetTitle("Y Position [mm]")
-    hist.GetYaxis().SetTitleOffset(1.2)
-    return hist
+    # collect values first so auto-ranging can see the data
+    vals = []
+    for (label, lo, hi, xb, yb) in STATIONS[key]:
+        m  = zmask(z, lo, hi)
+        xv = ak.to_numpy(ak.flatten(x[m])).astype(np.float64)
+        yv = ak.to_numpy(ak.flatten(y[m])).astype(np.float64)
+        vals.append((label, xv, yv, xb, yb))
 
+    shared_x = shared_y = None
+    if key in SHARED_AUTO_RANGE:
+        ax = np.concatenate([v[1] for v in vals]) if vals else np.array([])
+        ay = np.concatenate([v[2] for v in vals]) if vals else np.array([])
+        shared_x, shared_y = auto_range(ax), auto_range(ay)
 
-def auto_range(x_arr, y_arr, masks, pad=0.05, nb=100):
-    xs = np.concatenate([ak.to_numpy(ak.flatten(x_arr[m])) for m in masks]) \
-         if masks else np.array([0.])
-    ys = np.concatenate([ak.to_numpy(ak.flatten(y_arr[m])) for m in masks]) \
-         if masks else np.array([0.])
-    if len(xs) == 0:
-        return (nb, -1., 1.), (nb, -1., 1.)
-    def span(v):
-        lo, hi = float(v.min()), float(v.max())
-        if hi - lo < 1e-6:
-            lo, hi = lo - 1., hi + 1.
-        d = (hi - lo) * pad
-        return (nb, lo - d, hi + d)
-    return span(xs), span(ys)
+    hists = []
+    for i, (label, xv, yv, xb, yb) in enumerate(vals):
+        # priority: explicit per-station range -> shared auto -> per-station auto
+        xr = xb if xb is not None else (shared_x or auto_range(xv))
+        yr = yb if yb is not None else (shared_y or auto_range(yv))
 
+        name = f"h_{key.lower()}{i+1}"
+        h = ROOT.TH2F(name, f"Deuterons: {key} {label}",
+                      xr[0], xr[1], xr[2], yr[0], yr[1], yr[2])
+        if len(xv):
+            h.FillN(len(xv), xv, yv, np.ones(len(xv), dtype=np.float64))
 
-def build_maps(key):
-    hc, ac = COLLS[key]
-    d_mask = RES[key]["d_mask"]
-    x, y, z = get_xyz(hc, d_mask)
-    masks = [zmask(z, lo, hi) for _, lo, hi in STATIONS[key]]
+        h.GetXaxis().SetTitle("X Position [mm]")
+        h.GetYaxis().SetTitle("Y Position [mm]")
+        h.GetYaxis().SetTitleOffset(1.2)
+        # stop the tick labels from colliding on the narrow x-ranges
+        h.GetXaxis().SetNdivisions(505)
+        h.GetXaxis().SetLabelSize(0.035)
+        h.GetYaxis().SetLabelSize(0.035)
 
-    rng = RANGES[key]
-    if rng is None:
-        xb, yb = auto_range(x, y, masks)
-        rng = [(xb, yb)] * len(masks)
-
-    hs = []
-    for i, ((lbl, _, _), m) in enumerate(zip(STATIONS[key], masks)):
-        hs.append(fill_histogram(f"h_{key.lower()}{i+1}",
-                                 f"Deuterons: {key} {lbl}",
-                                 x, y, m, rng[i][0], rng[i][1]))
-    return hs
+        if len(xv):
+            print(f"  {name}: {len(xv)} hits  "
+                  f"x=[{xv.min():.1f},{xv.max():.1f}] "
+                  f"y=[{yv.min():.1f},{yv.max():.1f}]  "
+                  f"axis x=[{xr[1]:.0f},{xr[2]:.0f}]")
+        else:
+            print(f"  {name}: empty")
+        hists.append(h)
+    return hists
 
 
-def draw_grid(cname, ctitle, hists, ncol, nrow, acc_incl, acc_coin,
-              nreq, nstat, outfile, width, height):
-    c = ROOT.TCanvas(cname, ctitle, width, height)
+def draw_grid(key, hists, ncol, nrow, size, outfile):
+    r = RES[key]
+    n_i, n_c = int(r["incl"].sum()), int(r["coin"].sum())
+    a_i = n_i / n_gen_d if n_gen_d else 0.0
+    a_c = n_c / n_gen_d if n_gen_d else 0.0
+
+    c = ROOT.TCanvas(f"canvas_{key.lower()}", f"{key} Deuteron Hits", *size)
     c.Divide(ncol, nrow)
     for i, h in enumerate(hists, start=1):
         c.cd(i)
@@ -320,278 +343,294 @@ def draw_grid(cname, ctitle, hists, ncol, nrow, acc_incl, acc_coin,
         h.Draw("COLZ")
     c.cd(0)
     lat = ROOT.TLatex()
-    lat.SetNDC(); lat.SetTextSize(0.050 if nrow == 1 else 0.025)
-    lat.DrawLatex(0.20, 0.065 if nrow == 1 else 0.015,
-                  f"deuteron acceptance: inclusive = {acc_incl:.5f},  "
-                  f"{nreq}-of-{nstat} coincidence = {acc_coin:.5f}  "
-                  f"(N_{{gen}} = {n_gen_d})")
+    lat.SetNDC()
+    lat.SetTextSize(0.050 if nrow == 1 else 0.025)
+    lat.DrawLatex(0.20, 0.035,
+                  f"deuteron A_{{{N_REQUIRED[key]}/{len(hists)}}} = {a_c:.5f}"
+                  f"   (incl. {a_i:.5f}, N_{{gen}} = {n_gen_d})")
     c.SaveAs(outfile)
     return c
 
 
-CANVAS = {
-    "RP":  ("canvas_rp", "Roman Pot Deuteron Hits", 2, 1, 1400, 600,
-            "./Plots/rompot_deuteron_hits_xy_both_stations.pdf"),
-    "OMD": ("canvas_om", "OMD Deuteron Hits",       2, 1, 1400, 600,
-            "./Plots/offm_deuteron_hits_xy_both_stations.pdf"),
-    "B0":  ("canvas_b0", "B0 Tracker Deuteron Hits", 2, 2, 1400, 1200,
-            "./Plots/b0_deuteron_hits_xy_all_layers.pdf"),
-}
+print("\n[plots]")
+c_rp = draw_grid("RP",  station_hists("RP"),  2, 1, (1400, 600),
+                 "./Plots/rompot_deuteron_hits_xy_both_stations.pdf")
+c_om = draw_grid("OMD", station_hists("OMD"), 2, 1, (1400, 600),
+                 "./Plots/offm_deuteron_hits_xy_both_stations.pdf")
+c_b0 = draw_grid("B0",  station_hists("B0"),  2, 2, (1400, 1200),
+                 "./Plots/b0_deuteron_hits_xy_all_layers.pdf")
 
+
+# ==================================================================
+# Deuteron Endpoints (2D XY and 1D Z)
+# ==================================================================
+print("\n[plots] Generating deuteron endpoint distributions...")
+
+# Extract endpoints and apply the signal mask immediately (REMOVED .array())
+end_x = ak.to_numpy(ak.flatten(tree["MCParticles.endpoint.x"]))[flat_is_sig].astype(np.float64)
+end_y = ak.to_numpy(ak.flatten(tree["MCParticles.endpoint.y"]))[flat_is_sig].astype(np.float64)
+end_z = ak.to_numpy(ak.flatten(tree["MCParticles.endpoint.z"]))[flat_is_sig].astype(np.float64)
+
+c_end = ROOT.TCanvas("c_end", "Deuteron Endpoints", 1400, 600)
+c_end.Divide(2, 1)
+
+# 1. XY 2D Endpoint (Left)
+c_end.cd(1)
+ROOT.gPad.SetRightMargin(0.15)  # Make room for the Z-axis color bar
+h_end_xy = ROOT.TH2F("h_end_xy", "Deuteron Endpoint XY;x [mm];y [mm]", 
+                     100, -1300.0, -900.0, 
+                     100, -100.0, 100.0)
+if len(end_x) and len(end_y):
+    h_end_xy.FillN(len(end_x), end_x, end_y, np.ones(len(end_x), dtype=np.float64))
+h_end_xy.Draw("COLZ")
+
+# 2. Z Endpoint (Right)
+c_end.cd(2)
+ROOT.gPad.SetLogy()
+h_end_z = ROOT.TH1F("h_end_z", "Deuteron Endpoint Z;z [mm];Count", 100, 25000.0, 40000.0)
+h_end_z.SetLineColor(ROOT.kAzure + 2)
+h_end_z.SetFillColorAlpha(ROOT.kAzure + 2, 0.35)
+if len(end_z):
+    h_end_z.FillN(len(end_z), end_z, np.ones(len(end_z), dtype=np.float64))
+h_end_z.Draw("HIST")
+
+# Force ROOT to draw the canvas in memory to calculate the Y-axis limits
+ROOT.gPad.Update()
+y_min = ROOT.gPad.GetUymin()
+y_max = ROOT.gPad.GetUymax()
+
+# Convert back from log scale
+if ROOT.gPad.GetLogy():
+    y_min = 10**y_min
+    y_max = 10**y_max
+
+# Draw the vertical line at z = 32546.2
+z_line = ROOT.TLine(32546.2, y_min, 32546.2, y_max)
+z_line.SetLineColor(ROOT.kRed)
+z_line.SetLineStyle(2)
+z_line.SetLineWidth(2)
+z_line.Draw("SAME")
+
+c_end.SaveAs("./Plots/deuteron_endpoints_XY_Z.pdf")
+
+
+# ==================================================================
+# RP differential acceptance vs p, theta, xL
+# ==================================================================
+# REMOVED .array()
+px = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.x"]))
+py = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.y"]))
+pz = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.z"]))
+
+p_tot   = np.sqrt(px**2 + py**2 + pz**2)
+th_lab  = np.arctan2(np.hypot(px, py), pz) * 1e3        # mrad
+
+ca, sa  = np.cos(ROT_SIGN * CROSSING_ANGLE), np.sin(ROT_SIGN * CROSSING_ANGLE)
+pxb     =  ca * px + sa * pz
+pzb     = -sa * px + ca * pz
+th_beam = np.arctan2(np.hypot(pxb, py), pzb) * 1e3      # mrad
+xL      = p_tot / P_BEAM_D
+
+_g = flat_is_sig
+if _g.sum():
+    print(f"\n[frame] median theta_lab = {np.median(th_lab[_g]):.2f} mrad, "
+          f"median theta_beam = {np.median(th_beam[_g]):.2f} mrad "
+          f"(the beam-frame one should be the SMALL one; else flip ROT_SIGN)")
+    print(f"[frame] median p = {np.median(p_tot[_g]):.2f} GeV, "
+          f"median xL = {np.median(xL[_g]):.3f}")
+
+rp_incl, rp_coin = RES["RP"]["incl"], RES["RP"]["coin"]
+
+VARS = [
+    ("p",     p_tot,   "p [GeV]",               60, 0.0, 100.0),
+    ("theta", th_beam, "#theta_{beam} [mrad]",  60, 0.0,  5.0),
+    ("xL",    xL,      "x_{L} = p / p_{beam}",  60, 0.0,   1.3),
+]
+
+c_diff = ROOT.TCanvas("c_diff", "RP deuteron acceptance", 1800, 1000)
+c_diff.Divide(3, 2)
 keep = []
-for key in ("RP", "OMD", "B0"):
-    hs = build_maps(key)
-    cn, ct, nc, nr, w, h, out = CANVAS[key]
-    keep.append(draw_grid(cn, ct, hs, nc, nr,
-                          RES[key]["n_incl"] / n_gen_d if n_gen_d else 0.0,
-                          RES[key]["n_coin"] / n_gen_d if n_gen_d else 0.0,
-                          N_REQUIRED[key], len(STATIONS[key]), out, w, h))
-    keep.extend(hs)
-print()
+
+for i, (vname, arr, axt, nb, lo, hi) in enumerate(VARS):
+    h_gen = ROOT.TH1F(f"hg_{vname}", f";{axt};deuterons", nb, lo, hi)
+    h_inc = ROOT.TH1F(f"hi_{vname}", f";{axt};deuterons", nb, lo, hi)
+    h_coi = ROOT.TH1F(f"hc_{vname}", f";{axt};deuterons", nb, lo, hi)
+    for h, m in ((h_gen, _g), (h_inc, rp_incl), (h_coi, rp_coin)):
+        v = arr[m].astype(np.float64)
+        if len(v):
+            h.FillN(len(v), v, np.ones(len(v), dtype=np.float64))
+
+    h_gen.SetFillColorAlpha(ROOT.kGray + 1, 0.35)
+    h_gen.SetLineColor(ROOT.kGray + 2)
+    h_inc.SetLineColor(ROOT.kAzure + 2);  h_inc.SetLineWidth(2)
+    h_coi.SetLineColor(ROOT.kRed + 1);    h_coi.SetLineWidth(2)
+
+    c_diff.cd(i + 1)
+    ROOT.gPad.SetLogy()
+    ROOT.gPad.SetLeftMargin(0.13)
+    h_gen.SetMaximum(max(h_gen.GetMaximum() * 5.0, 10.0))
+    h_gen.SetMinimum(0.5)
+    h_gen.Draw("HIST")
+    h_inc.Draw("HIST SAME")
+    h_coi.Draw("HIST SAME")
+
+    leg = ROOT.TLegend(0.55, 0.70, 0.88, 0.88)
+    leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.035)
+    leg.AddEntry(h_gen, "generated", "f")
+    leg.AddEntry(h_inc, "RP inclusive", "l")
+    leg.AddEntry(h_coi, "RP 2-of-2", "l")
+    leg.Draw()
+
+    c_diff.cd(i + 4)
+    ROOT.gPad.SetLeftMargin(0.13)
+    frame = ROOT.TH1F(f"fr_{vname}", f";{axt};acceptance", nb, lo, hi)
+    frame.SetMinimum(0.0); frame.SetMaximum(1.15)
+    frame.Draw()
+    eff_i = ROOT.TEfficiency(h_inc, h_gen)
+    eff_c = ROOT.TEfficiency(h_coi, h_gen)
+    eff_i.SetLineColor(ROOT.kAzure + 2); eff_i.SetMarkerColor(ROOT.kAzure + 2)
+    eff_i.SetMarkerStyle(20); eff_i.SetMarkerSize(0.7)
+    eff_c.SetLineColor(ROOT.kRed + 1);   eff_c.SetMarkerColor(ROOT.kRed + 1)
+    eff_c.SetMarkerStyle(21); eff_c.SetMarkerSize(0.7)
+    eff_i.Draw("SAME P")
+    eff_c.Draw("SAME P")
+
+    leg2 = ROOT.TLegend(0.55, 0.20, 0.88, 0.38)
+    leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.SetTextSize(0.035)
+    leg2.AddEntry(eff_i, "inclusive", "lp")
+    leg2.AddEntry(eff_c, "2-of-2", "lp")
+    leg2.Draw()
+
+    keep += [h_gen, h_inc, h_coi, frame, eff_i, eff_c, leg, leg2]
+
+c_diff.SaveAs("./Plots/rompot_deuteron_acceptance_vs_p_theta_xL.pdf")
+
+
+# 2D acceptance map: theta vs p
+def acc_map(name, title, num_mask):
+    hn = ROOT.TH2F(f"n_{name}", title, 40, -1.5, 5.0, 40, 70.0, 95.0)
+    hd = ROOT.TH2F(f"d_{name}", title, 40, -1.5, 5.0, 40, 70.0, 95.0)
+    for h, m in ((hn, num_mask), (hd, _g)):
+        tv, pv = th_beam[m].astype(np.float64), p_tot[m].astype(np.float64)
+        if len(tv):
+            h.FillN(len(tv), tv, pv, np.ones(len(tv), dtype=np.float64))
+    hn.Divide(hd)
+    # empty denominator -> white, so "never tested" != "acceptance 0"
+    for bx in range(1, hn.GetNbinsX() + 1):
+        for by in range(1, hn.GetNbinsY() + 1):
+            if hd.GetBinContent(bx, by) == 0:
+                hn.SetBinContent(bx, by, -1.0)
+    hn.SetMinimum(-0.001); hn.SetMaximum(1.0)
+    hn.GetXaxis().SetTitle("#theta_{beam} [mrad]")
+    hn.GetYaxis().SetTitle("p [GeV]")
+    hn.GetYaxis().SetTitleOffset(1.3)
+    return hn, hd
+
+
+c_map = ROOT.TCanvas("c_map", "RP acceptance map", 1400, 600)
+c_map.Divide(2, 1)
+m_i, d_i = acc_map("incl", "RP deuteron acceptance (inclusive)", rp_incl)
+m_c, d_c = acc_map("coin", "RP deuteron acceptance (2-of-2)",    rp_coin)
+for j, h in enumerate((m_i, m_c), start=1):
+    c_map.cd(j)
+    ROOT.gPad.SetRightMargin(0.16)
+    ROOT.gPad.SetLeftMargin(0.14)
+    h.Draw("COLZ")
+c_map.SaveAs("./Plots/rompot_deuteron_acceptance_map_p_vs_theta.pdf")
+
+# Tabulated acceptance in theta slices
+print("\n[RP acceptance vs theta_beam]")
+print(f"  {'theta [mrad]':<16}{'N_gen':>8}{'incl':>10}{'2-of-2':>10}"
+      f"{'A_incl':>10}{'A_coin':>10}{'coin/incl':>11}")
+edges = np.linspace(0.0, 10.0, 9)
+for k in range(len(edges) - 1):
+    sl  = _g & (th_beam >= edges[k]) & (th_beam < edges[k + 1])
+    ng  = int(sl.sum())
+    ni  = int((sl & rp_incl).sum())
+    nc  = int((sl & rp_coin).sum())
+    if not ng:
+        continue
+    print(f"  {edges[k]:5.1f} {edges[k+1]:5.1f}{ng:>8d}{ni:>10d}{nc:>10d}"
+          f"{ni/ng:>10.4f}{nc/ng:>10.4f}{(nc/ni if ni else 0.0):>11.4f}")
 
 
 # ==================================================================
-# DIFFERENTIAL RP ACCEPTANCE vs momentum and theta
-#
-# incl_bits / coin_bits are per-MC-particle booleans on the flattened
-# MCParticles axis, so they index the flattened momentum arrays directly:
-# numerator and denominator are by construction the same particles, binned
-# the same way.  No re-matching, no double counting.
+# Missing Deuterons Investigation
 # ==================================================================
-px = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.x"].array())).astype(np.float64)
-py = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.y"].array())).astype(np.float64)
-pz = ak.to_numpy(ak.flatten(tree["MCParticles.momentum.z"].array())).astype(np.float64)
+print("\n[investigation] Analyzing missing deuterons...")
 
-# ------------------------------------------------------------------
-# Frame. The sample is "XRot": the crossing angle is already applied, so the
-# lab z-axis is NOT the hadron beam axis. Angles must be measured from the
-# beam, otherwise the whole spectator peak sits at ~25 mrad and the RP
-# acceptance window is smeared across it. Rotate about y to undo it.
-# Flip ROT_SIGN if the beam-frame median below is not the one near zero.
-# ------------------------------------------------------------------
-CROSSING_ANGLE = 0.025      # rad
-ROT_SIGN       = -1.0       # -1 undoes a +25 mrad rotation about +y
+# Isolate the Missing Particles (generated but failed RP coincidence)
+missing_mask = _g & ~rp_coin
+n_missing = int(missing_mask.sum())
+print(f"  Investigating {n_missing} missing deuterons...")
 
-_a = ROT_SIGN * CROSSING_ANGLE
-px_b =  px * np.cos(_a) + pz * np.sin(_a)
-pz_b = -px * np.sin(_a) + pz * np.cos(_a)
-py_b =  py
+if n_missing > 0:
+    # Extract variables for missing deuterons (REMOVED .array())
+    missing_end_z = ak.to_numpy(ak.flatten(tree["MCParticles.endpoint.z"]))[missing_mask].astype(np.float64)
+    missing_end_x = ak.to_numpy(ak.flatten(tree["MCParticles.endpoint.x"]))[missing_mask].astype(np.float64)
+    missing_th    = th_beam[missing_mask].astype(np.float64)
+    missing_p     = p_tot[missing_mask].astype(np.float64)
 
-p_tot     = np.sqrt(px * px + py * py + pz * pz)
-theta_lab = np.arctan2(np.hypot(px, py), pz) * 1e3                    # mrad
-theta_bm  = np.arctan2(np.hypot(px_b, py_b), pz_b) * 1e3              # mrad
-pt_bm     = np.hypot(px_b, py_b)
+    # 1. 1D Endpoint Z Plot
+    h_missing_z = ROOT.TH1F("h_missing_z", "Endpoint Z of Missing Deuterons;z [mm];Count", 200, 0.0, 40000.0)
+    h_missing_z.SetLineColor(ROOT.kRed)
+    h_missing_z.SetFillColorAlpha(ROOT.kRed, 0.35)
+    
+    if len(missing_end_z):
+        h_missing_z.FillN(len(missing_end_z), missing_end_z, np.ones(len(missing_end_z), dtype=np.float64))
 
-g = flat_is_gen_d
-print("[frame] generated deuterons: "
-      f"median theta_lab = {np.median(theta_lab[g]):.3f} mrad, "
-      f"median theta_beam = {np.median(theta_bm[g]):.3f} mrad")
-print("[frame] the beam-frame column should be the one peaking near 0; "
-      "flip ROT_SIGN otherwise.")
+    c_miss_z = ROOT.TCanvas("c_miss_z", "Missing Z", 800, 600)
+    ROOT.gPad.SetLogy()
+    h_missing_z.Draw("HIST")
+    
+    ROOT.gPad.Update()
+    y_min_miss = ROOT.gPad.GetUymin()
+    y_max_miss = ROOT.gPad.GetUymax()
+    if ROOT.gPad.GetLogy():
+        y_min_miss = 10**y_min_miss
+        y_max_miss = 10**y_max_miss
+        
+    z_line_miss = ROOT.TLine(32546.2, y_min_miss, 32546.2, y_max_miss)
+    z_line_miss.SetLineColor(ROOT.kBlack)
+    z_line_miss.SetLineStyle(2)
+    z_line_miss.SetLineWidth(2)
+    z_line_miss.Draw("SAME")
 
-# x_L relative to the nominal per-nucleon beam momentum times A=2
-P_BEAM_PER_NUCLEON = 41.0
-P_BEAM_D           = 2.0 * P_BEAM_PER_NUCLEON
-xL = p_tot / P_BEAM_D
+    c_miss_z.SaveAs("./Plots/missing_deuterons_z.pdf")
 
-print(f"[frame] generated deuteron p: median = {np.median(p_tot[g]):.2f} GeV, "
-      f"range = [{p_tot[g].min():.2f}, {p_tot[g].max():.2f}] GeV")
-print(f"[frame] generated deuteron x_L (p / {P_BEAM_D:.0f} GeV): "
-      f"median = {np.median(xL[g]):.4f}\n")
+    # 2. Correlate Loss with Kinematics (Momentum vs Angle)
+    h_missing_kin = ROOT.TH2F("h_missing_kin", "Kinematics of Missing Deuterons;#theta_{beam} [mrad];p [GeV]", 
+                              50, 0.0, 6.0, 50, 40.0, 100.0)
+    if len(missing_th):
+        h_missing_kin.FillN(len(missing_th), missing_th, missing_p, np.ones(len(missing_th), dtype=np.float64))
 
-rp_incl = RES["RP"]["incl_bits"]
-rp_coin = RES["RP"]["coin_bits"]
+    c_miss_kin = ROOT.TCanvas("c_miss_kin", "Missing Kinematics", 800, 600)
+    ROOT.gPad.SetRightMargin(0.15)
+    h_missing_kin.Draw("COLZ")
+    c_miss_kin.SaveAs("./Plots/missing_deuterons_kinematics.pdf")
 
+    # 3. NEW: Missing Theta vs Missing Endpoint Z
+    h_miss_th_z = ROOT.TH2F("h_miss_th_z", "Missing Deuterons: #theta_{beam} vs Endpoint Z;Endpoint Z [mm];#theta_{beam} [mrad]", 
+                            50, 25000.0, 40000.0, 50, 0.0, 5.0)
+    if len(missing_end_z) and len(missing_th):
+        h_miss_th_z.FillN(len(missing_end_z), missing_end_z, missing_th, np.ones(len(missing_end_z), dtype=np.float64))
 
-def _range(v, lo_q=0.0, hi_q=99.8, pad=0.05, floor=None):
-    if len(v) == 0:
-        return 0.0, 1.0
-    lo, hi = np.percentile(v, lo_q), np.percentile(v, hi_q)
-    if hi - lo < 1e-9:
-        lo, hi = lo - 1.0, hi + 1.0
-    d = (hi - lo) * pad
-    lo = lo - d if floor is None else max(floor, lo - d)
-    return float(lo), float(hi + d)
+    c_miss_th_z = ROOT.TCanvas("c_miss_th_z", "Missing Theta vs Z", 800, 600)
+    ROOT.gPad.SetRightMargin(0.15)
+    h_miss_th_z.Draw("COLZ")
+    c_miss_th_z.SaveAs("./Plots/missing_deuterons_theta_vs_z.pdf")
 
+    # 4. NEW: Missing Endpoint X vs Missing Endpoint Z
+    h_miss_x_z = ROOT.TH2F("h_miss_x_z", "Missing Deuterons: Endpoint X vs Endpoint Z;Endpoint Z [mm];Endpoint X [mm]", 
+                           50, 25000.0, 40000.0, 50, -1500.0, -500.0)
+    if len(missing_end_z) and len(missing_end_x):
+        h_miss_x_z.FillN(len(missing_end_z), missing_end_z, missing_end_x, np.ones(len(missing_end_z), dtype=np.float64))
 
-def fill1d(name, title, xtitle, vals, nb, lo, hi):
-    h = ROOT.TH1D(name, f"{title};{xtitle};generated deuterons", nb, lo, hi)
-    v = np.ascontiguousarray(vals, dtype=np.float64)
-    if len(v):
-        h.FillN(len(v), v, np.ones(len(v), dtype=np.float64))
-    h.Sumw2()
-    return h
-
-
-def eff_plot(name, title, xtitle, var, nb, lo, hi):
-    """Return (h_gen, h_incl, h_coin, TEfficiency incl, TEfficiency coin)."""
-    h_gen  = fill1d(f"{name}_gen",  title, xtitle, var[g],          nb, lo, hi)
-    h_inc  = fill1d(f"{name}_inc",  title, xtitle, var[rp_incl],    nb, lo, hi)
-    h_coi  = fill1d(f"{name}_coi",  title, xtitle, var[rp_coin],    nb, lo, hi)
-
-    # Clopper-Pearson: correct near A -> 0 or 1, where the Gaussian error is not.
-    e_inc = ROOT.TEfficiency(h_inc, h_gen); e_inc.SetName(f"{name}_eff_inc")
-    e_coi = ROOT.TEfficiency(h_coi, h_gen); e_coi.SetName(f"{name}_eff_coi")
-    e_inc.SetStatisticOption(ROOT.TEfficiency.kFCP)
-    e_coi.SetStatisticOption(ROOT.TEfficiency.kFCP)
-    return h_gen, h_inc, h_coi, e_inc, e_coi
-
-
-def style_spectra(h_gen, h_inc, h_coi):
-    h_gen.SetLineColor(ROOT.kGray + 2); h_gen.SetLineWidth(2)
-    h_gen.SetFillColorAlpha(ROOT.kGray, 0.35)
-    h_inc.SetLineColor(ROOT.kAzure + 2); h_inc.SetLineWidth(2)
-    h_coi.SetLineColor(ROOT.kRed + 1);   h_coi.SetLineWidth(2)
-    for h in (h_gen, h_inc, h_coi):
-        h.GetYaxis().SetTitle("deuterons")
-        h.GetYaxis().SetTitleOffset(1.35)
-
-
-def style_eff(e_inc, e_coi):
-    e_inc.SetLineColor(ROOT.kAzure + 2); e_inc.SetMarkerColor(ROOT.kAzure + 2)
-    e_inc.SetMarkerStyle(20); e_inc.SetMarkerSize(0.9); e_inc.SetLineWidth(2)
-    e_coi.SetLineColor(ROOT.kRed + 1);   e_coi.SetMarkerColor(ROOT.kRed + 1)
-    e_coi.SetMarkerStyle(21); e_coi.SetMarkerSize(0.9); e_coi.SetLineWidth(2)
-
-
-def draw_diff(cname, outfile, blocks):
-    """blocks = [(xtitle, h_gen, h_inc, h_coi, e_inc, e_coi), ...] one column each."""
-    n = len(blocks)
-    c = ROOT.TCanvas(cname, cname, 700 * n, 1000)
-    c.Divide(n, 2)
-
-    for i, (xt, hg, hi_, hc, ei, ec) in enumerate(blocks):
-        # --- top row: spectra, generated vs accepted
-        c.cd(i + 1)
-        ROOT.gPad.SetRightMargin(0.06)
-        ROOT.gPad.SetLeftMargin(0.15)
-        ROOT.gPad.SetBottomMargin(0.14)
-        ROOT.gPad.SetTopMargin(0.10)
-        ROOT.gPad.SetLogy()
-        hg.SetMaximum(hg.GetMaximum() * 5.0)
-        hg.SetMinimum(0.5)
-        hg.Draw("HIST")
-        hi_.Draw("HIST SAME")
-        hc.Draw("HIST SAME")
-        leg = ROOT.TLegend(0.45, 0.72, 0.93, 0.89)
-        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.033)
-        leg.AddEntry(hg,  "generated", "F")
-        leg.AddEntry(hi_, "RP accepted (inclusive)", "L")
-        leg.AddEntry(hc,  "RP accepted (2-of-2 coincidence)", "L")
-        leg.Draw()
-        keep.append(leg)
-
-        # --- bottom row: acceptance
-        c.cd(n + i + 1)
-        ROOT.gPad.SetRightMargin(0.06)
-        ROOT.gPad.SetLeftMargin(0.15)
-        ROOT.gPad.SetBottomMargin(0.14)
-        ROOT.gPad.SetTopMargin(0.10)
-        ROOT.gPad.SetGridx(); ROOT.gPad.SetGridy()
-        frame = ROOT.gPad.DrawFrame(hg.GetXaxis().GetXmin(), 0.0,
-                                    hg.GetXaxis().GetXmax(), 1.05)
-        frame.GetXaxis().SetTitle(xt)
-        frame.GetYaxis().SetTitle("RP acceptance")
-        frame.GetYaxis().SetTitleOffset(1.35)
-        ei.Draw("P SAME")
-        ec.Draw("P SAME")
-        leg2 = ROOT.TLegend(0.45, 0.76, 0.93, 0.89)
-        leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.SetTextSize(0.033)
-        leg2.AddEntry(ei, "inclusive (#geq1 station)", "LP")
-        leg2.AddEntry(ec, "2-of-2 coincidence", "LP")
-        leg2.Draw()
-        keep.extend([frame, leg2])
-
-    c.cd(0)
-    lat = ROOT.TLatex(); lat.SetNDC(); lat.SetTextSize(0.022)
-    lat.DrawLatex(0.15, 0.005,
-                  f"Roman Pots, deuterons, N_{{gen}} = {n_gen_d};  "
-                  f"errors = Clopper-Pearson 68% CL")
-    c.SaveAs(outfile)
-    return c
-
-
-NB = 50
-p_lo,  p_hi  = _range(p_tot[g],    0.2, 99.8, floor=0.0)
-th_lo, th_hi = _range(theta_bm[g], 0.0, 99.5, floor=0.0)
-xl_lo, xl_hi = _range(xL[g],       0.2, 99.8, floor=0.0)
-
-blk_p  = ("p [GeV/c]",) + eff_plot("rp_p",  "Deuterons: RP acceptance vs momentum",
-                                   "p [GeV/c]", p_tot, NB, p_lo, p_hi)
-blk_th = ("#theta_{beam} [mrad]",) + eff_plot("rp_th", "Deuterons: RP acceptance vs #theta",
-                                              "#theta_{beam} [mrad]", theta_bm,
-                                              NB, th_lo, th_hi)
-blk_xl = ("x_{L} = p / p_{beam}",) + eff_plot("rp_xl", "Deuterons: RP acceptance vs x_{L}",
-                                              "x_{L}", xL, NB, xl_lo, xl_hi)
-
-for b in (blk_p, blk_th, blk_xl):
-    style_spectra(b[1], b[2], b[3])
-    style_eff(b[4], b[5])
-    keep.extend(b[1:])
-
-keep.append(draw_diff("canvas_rp_diff",
-                      "./Plots/rompot_deuteron_acceptance_vs_p_theta_xL.pdf",
-                      [blk_p, blk_th, blk_xl]))
-
-# ------------------------------------------------------------------
-# 2D acceptance map: where in (theta, p) the coincidence requirement bites.
-# Divide accepted by generated bin-by-bin; bins with no generated deuterons
-# are blanked so an empty region is not drawn as zero acceptance.
-# ------------------------------------------------------------------
-def map2d(name, title, sel):
-    h = ROOT.TH2D(name, title, 40, th_lo, th_hi, 40, p_lo, p_hi)
-    xs = np.ascontiguousarray(theta_bm[sel], dtype=np.float64)
-    ys = np.ascontiguousarray(p_tot[sel],    dtype=np.float64)
-    if len(xs):
-        h.FillN(len(xs), xs, ys, np.ones(len(xs), dtype=np.float64))
-    return h
-
-
-h2_gen  = map2d("h2_gen",  "generated",  g)
-h2_inc  = map2d("h2_inc",  "inclusive",  rp_incl)
-h2_coin = map2d("h2_coin", "coincidence", rp_coin)
-
-c2 = ROOT.TCanvas("canvas_rp_map", "RP acceptance map", 1400, 600)
-c2.Divide(2, 1)
-for i, (hnum, lbl) in enumerate(((h2_inc, "inclusive (#geq1 station)"),
-                                 (h2_coin, "2-of-2 coincidence")), start=1):
-    hr = hnum.Clone(f"{hnum.GetName()}_ratio")
-    hr.Divide(h2_gen)
-    for bx in range(1, hr.GetNbinsX() + 1):
-        for by in range(1, hr.GetNbinsY() + 1):
-            if h2_gen.GetBinContent(bx, by) == 0:
-                hr.SetBinContent(bx, by, -1.0)   # blank, distinct from true 0
-    hr.SetTitle(f"Deuteron RP acceptance, {lbl}")
-    hr.GetXaxis().SetTitle("#theta_{beam} [mrad]")
-    hr.GetYaxis().SetTitle("p [GeV/c]")
-    hr.GetYaxis().SetTitleOffset(1.2)
-    hr.SetMinimum(0.0); hr.SetMaximum(1.0)
-    c2.cd(i)
+    c_miss_x_z = ROOT.TCanvas("c_miss_x_z", "Missing X vs Z", 800, 600)
     ROOT.gPad.SetRightMargin(0.15)
     ROOT.gPad.SetLeftMargin(0.13)
-    ROOT.gPad.SetBottomMargin(0.2)
-    ROOT.gPad.SetTopMargin(0.10)
-    hr.Draw("COLZ")
-    keep.append(hr)
-c2.cd(0)
-lat = ROOT.TLatex(); lat.SetNDC(); lat.SetTextSize(0.050)
-lat.DrawLatex(0.22, 0.065, f"empty (white) = no generated deuterons in bin")
-c2.SaveAs("./Plots/rompot_deuteron_acceptance_map_p_vs_theta.pdf")
-keep.extend([c2, h2_gen, h2_inc, h2_coin])
+    h_miss_x_z.Draw("COLZ")
+    c_miss_x_z.SaveAs("./Plots/missing_deuterons_x_vs_z.pdf")
 
-# ------------------------------------------------------------------
-# Numerical summary in coarse theta slices -- easier to quote than a plot
-# ------------------------------------------------------------------
-print("RP acceptance in theta_beam slices (deuterons):")
-print(f"  {'theta [mrad]':<18}{'N_gen':>9}{'A_incl':>10}{'A_coin':>10}{'coin/incl':>11}")
-edges = np.linspace(th_lo, th_hi, 9)
-for lo, hi in zip(edges[:-1], edges[1:]):
-    sl = g & (theta_bm >= lo) & (theta_bm < hi)
-    ng = int(sl.sum())
-    if ng == 0:
-        continue
-    ni = int((sl & rp_incl).sum())
-    nc = int((sl & rp_coin).sum())
-    print(f"  {lo:6.2f} - {hi:6.2f}  {ng:>9d}{ni/ng:>10.4f}{nc/ng:>10.4f}"
-          f"{(nc/ni if ni else 0.0):>11.4f}")
-print()
+else:
+    print("  No missing deuterons found! Acceptance is 100%.")
