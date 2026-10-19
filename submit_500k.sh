@@ -7,7 +7,7 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem-per-cpu=2000
-#SBATCH --array=0-249%100              # 250 jobs * 2,000 events = 500,000 events (max 100 at once)
+#SBATCH --array=250-999%100              # 250 jobs * 2,000 events = 500,000 events (max 100 at once)
 #SBATCH --output=logs/%x_%A_%a.out
 #SBATCH --error=logs/%x_%A_%a.err
 
