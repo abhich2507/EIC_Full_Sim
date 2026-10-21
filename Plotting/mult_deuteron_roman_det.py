@@ -161,6 +161,9 @@ for f_idx, filename in enumerate(file_list):
     mc_pdg    = tree["MCParticles.PDG"].array()
     mc_status = tree["MCParticles.generatorStatus"].array()
 
+    reco_parts = tree["ReconstructedChargedParticles"].array()
+    reco_pdg   = tree["ReconstructedChargedParticles.PDG"].array()
+    
     if SELECTION_MODE == "generated":
         mc_is_sig = (mc_pdg == DEUTERON) & (mc_status == GEN_STATUS)
     else:
