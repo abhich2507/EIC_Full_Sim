@@ -7,7 +7,10 @@ from pathlib import Path
 
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
-max_events = 5  
+# Make the main pad titles larger
+ROOT.gStyle.SetTitleFontSize(0.06)  
+
+max_events = -1
 
 # Constants
 ELECTRON_PDG   = 11
@@ -16,27 +19,27 @@ REC_GEN_STATUS = 1  # Final-state MC particles
 MASS_ELECTRON = 0.000511  # GeV
 MASS_HELIUM3  = 2.8084    # GeV
 
-# Optimized Binning (Reduced to ~40-50 for smoother acceptance curves)
+# Optimized Binning
 nBins_lin = 50
 nBins_log = 40
-x_bins  = np.logspace(-4, 0, nBins_log + 1)
-Q2_bins = np.logspace(-1, 3, nBins_log + 1)
+x_bins  = np.logspace(-3, 0, nBins_log + 1)
+Q2_bins = np.logspace(0, 3, nBins_log + 1)
 
 # Initialize Histograms
-h_gen_p = ROOT.TH1F("h_gen_p", "Electron Momentum;p_{e} [GeV];Electrons", nBins_lin, 0, 10)
-h_rec_p = ROOT.TH1F("h_rec_p", "Electron Momentum;p_{e} [GeV];Electrons", nBins_lin, 0, 10)
+h_gen_p = ROOT.TH1F("h_gen_p", "Momentum;p_{e} [GeV];Electrons", nBins_lin, 0, 10)
+h_rec_p = ROOT.TH1F("h_rec_p", "Momentum;p_{e} [GeV];Electrons", nBins_lin, 0, 10)
 
 h_gen_pT = ROOT.TH1F("h_gen_pT", "Electron Transverse Momentum;p_{e}^{T} [GeV];Electrons", nBins_lin, 0, 10)
 h_rec_pT = ROOT.TH1F("h_rec_pT", "Electron Transverse Momentum;p_{e}^{T} [GeV];Electrons", nBins_lin, 0, 10)
 
-h_gen_theta = ROOT.TH1F("h_gen_theta", "Electron Polar Angle;#theta [deg];Electrons", nBins_lin, 0, 180)
-h_rec_theta = ROOT.TH1F("h_rec_theta", "Electron Polar Angle;#theta [deg];Electrons", nBins_lin, 0, 180)
+h_gen_theta = ROOT.TH1F("h_gen_theta", "Polar Angle;#theta [deg];Electrons", nBins_lin, 0, 180)
+h_rec_theta = ROOT.TH1F("h_rec_theta", "Polar Angle;#theta [deg];Electrons", nBins_lin, 0, 180)
 
-h_gen_Q2 = ROOT.TH1F("h_gen_Q2", "Electron Q^{2};Q^{2} [GeV^{2}];Electrons", nBins_log, x_bins)
-h_rec_Q2 = ROOT.TH1F("h_rec_Q2", "Electron Q^{2};Q^{2} [GeV^{2}];Electrons", nBins_log, x_bins)
+h_gen_Q2 = ROOT.TH1F("h_gen_Q2", " Q^{2};Q^{2} [GeV^{2}];Electrons", nBins_log, Q2_bins)
+h_rec_Q2 = ROOT.TH1F("h_rec_Q2", " Q^{2};Q^{2} [GeV^{2}];Electrons", nBins_log, Q2_bins)
 
-h_gen_x = ROOT.TH1F("h_gen_x", "Electron Bjorken x;x;Electrons", nBins_log, Q2_bins)
-h_rec_x = ROOT.TH1F("h_rec_x", "Electron Bjorken x;x;Electrons", nBins_log, Q2_bins)
+h_gen_x = ROOT.TH1F("h_gen_x", " x_{B};x_{B};Electrons", nBins_log, x_bins)
+h_rec_x = ROOT.TH1F("h_rec_x", "x_{B};x_{B};Electrons", nBins_log, x_bins)
 
 for h in (h_gen_p, h_gen_theta, h_gen_Q2, h_gen_x, h_gen_pT):
     h.SetLineWidth(2)
@@ -45,14 +48,19 @@ for h in (h_rec_p, h_rec_theta, h_rec_Q2, h_rec_x, h_rec_pT):
     h.SetLineWidth(2)
     h.SetLineColor(ROOT.kBlue)
 
-# Apply global styling to all histograms
+# Apply global styling to all histograms for bigger text and offsets
 for h in (h_gen_p, h_gen_theta, h_gen_Q2, h_gen_x, h_gen_pT, h_rec_p, h_rec_theta, h_rec_Q2, h_rec_x, h_rec_pT):
-    h.GetYaxis().SetTitleOffset(1.2)
+    h.GetXaxis().SetTitleSize(0.06)
+    h.GetYaxis().SetTitleSize(0.06)
+    h.GetXaxis().SetLabelSize(0.065)
+    h.GetYaxis().SetLabelSize(0.065)
+    
+    # Increased offsets to prevent the larger text from hitting the numbers
     h.GetXaxis().SetTitleOffset(1.2)
-    h.GetXaxis().SetTitleSize(0.05)
-    h.GetYaxis().SetTitleSize(0.05)
-    h.GetYaxis().SetLabelSize(0.06)
-    h.GetXaxis().SetLabelSize(0.06)
+    h.GetYaxis().SetTitleOffset(1.4)
+    
+    h.GetXaxis().CenterTitle(True)
+    h.GetYaxis().CenterTitle(True)
 
 # File list setup
 dir_path  = Path("/work/eic/users/aabhishe/Recon_out_1M")
@@ -165,16 +173,23 @@ main_pad = ROOT.TPad("main_pad", "main_pad", 0.0, 0.0, 1.0, 0.92)
 main_pad.Draw()
 main_pad.Divide(2, 2)
 
-main_pad.cd(1); ROOT.gPad.SetLogy(); ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+# Helper function for setting perfect margins on every pad
+def set_pad_margins():
+    ROOT.gPad.SetLeftMargin(0.18)   # Wide left margin for big Y-axis titles
+    ROOT.gPad.SetBottomMargin(0.16) # Wide bottom margin for big X-axis titles
+    ROOT.gPad.SetRightMargin(0.05)  
+    ROOT.gPad.SetTopMargin(0.12)    # Room at the top for the main title
+
+main_pad.cd(1); ROOT.gPad.SetLogy(); set_pad_margins()
 h_gen_p.Draw("HIST"); h_rec_p.Draw("HIST SAME")
 
-main_pad.cd(2); ROOT.gPad.SetLogy(); ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+main_pad.cd(2); ROOT.gPad.SetLogy(); set_pad_margins()
 h_gen_theta.Draw("HIST"); h_rec_theta.Draw("HIST SAME")
 
-main_pad.cd(3); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogx(); ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+main_pad.cd(3); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogx(); set_pad_margins()
 h_gen_Q2.Draw("HIST"); h_rec_Q2.Draw("HIST SAME")
 
-main_pad.cd(4); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogx(); ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+main_pad.cd(4); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogx(); set_pad_margins()
 h_gen_x.Draw("HIST"); h_rec_x.Draw("HIST SAME")
 
 c_dist.cd(0)
@@ -201,33 +216,40 @@ c_acc.Divide(2, 2)
 def draw_acceptance(pad_num, h_rec, h_gen, title, xtitle, is_logx=False):
     c_acc.cd(pad_num)
     if is_logx: ROOT.gPad.SetLogx()
-    ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+    set_pad_margins()
     ROOT.gPad.SetGridy()
     
     h_acc = h_rec.Clone(f"{h_rec.GetName()}_acc")
-    # Crucial: Option "B" calculates true Binomial error bars for efficiency
     h_acc.Divide(h_acc, h_gen, 1.0, 1.0, "B")
     
     h_acc.SetTitle(title)
     h_acc.GetXaxis().SetTitle(xtitle)
-    h_acc.GetYaxis().SetTitle("Acceptance Fraction")
-    h_acc.SetLineColor(ROOT.kBlack)
+    h_acc.GetYaxis().SetTitle("#frac{Reconstructed}{Generated}")
+    
+    # Re-apply the text sizes specifically for the cloned histogram
+    h_acc.GetXaxis().SetTitleSize(0.06)
+    h_acc.GetYaxis().SetTitleSize(0.06)
+    h_acc.GetXaxis().SetLabelSize(0.055)
+    h_acc.GetYaxis().SetLabelSize(0.055)
+    h_acc.GetXaxis().SetTitleOffset(1.2)
+    h_acc.GetYaxis().SetTitleOffset(1.4)
+    h_acc.GetXaxis().CenterTitle(True)
+    h_acc.GetYaxis().CenterTitle(True)
+
+    h_acc.SetLineColor(ROOT.kMagenta)
     h_acc.SetMarkerStyle(20)
     h_acc.SetMarkerSize(0.8)
     h_acc.SetMinimum(0.0)
-    h_acc.SetMaximum(1.1)  # Leaves room at top so 100% is visible
+    h_acc.SetMaximum(1.1)  
     
-    # Draw as points with errors
     h_acc.Draw("PE")
     return h_acc
 
-# Store histograms in a list so Python doesn't garbage collect them
 acc_hists = []
-acc_hists.append(draw_acceptance(1, h_rec_p, h_gen_p, "Momentum Acceptance;p_{e} [GeV]", "p_{e} [GeV]"))
-acc_hists.append(draw_acceptance(2, h_rec_theta, h_gen_theta, "Polar Angle Acceptance;#theta [deg]", "#theta [deg]"))
-acc_hists.append(draw_acceptance(3, h_rec_Q2, h_gen_Q2, "Q^{2} Acceptance;Q^{2} [GeV^{2}]", "Q^{2} [GeV^{2}]", is_logx=True))
-acc_hists.append(draw_acceptance(4, h_rec_x, h_gen_x, "Bjorken x Acceptance;x", "x", is_logx=True))
+acc_hists.append(draw_acceptance(1, h_rec_p, h_gen_p, "Momentum Acceptance", "p_{e} [GeV]"))
+acc_hists.append(draw_acceptance(2, h_rec_theta, h_gen_theta, "Polar Angle Acceptance", "#theta [deg]"))
+acc_hists.append(draw_acceptance(3, h_rec_Q2, h_gen_Q2, "Q^{2} Acceptance", "Q^{2} [GeV^{2}]", is_logx=True))
+acc_hists.append(draw_acceptance(4, h_rec_x, h_gen_x, "x_{B} Acceptance", "x_{B}", is_logx=True))
 
-# Print second page and immediately close the PDF document
 c_acc.Print("../Plots/electron_acceptance.pdf")
 c_acc.Print("../Plots/electron_acceptance.pdf]")

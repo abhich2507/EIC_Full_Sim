@@ -1,0 +1,24 @@
+FINAL STATISTICS OVER ALL FILES
+==================================================
+[status] generatorStatus of all PDG 1000010020 in MCParticles:
+         status=0    n=70530     (Geant4-produced secondary)
+         status=1    n=912750    <-- used as denominator
+[status] selection = 'generated' -> N_gen = 912750
+
+--- RP ---
+    Station 1 (z #approx 32.5 m)     n=770172  A=0.84379
+    Station 2 (z #approx 34.3 m)     n=788860  A=0.86427
+    inclusive (>=1 station)          n=812720  A=0.89041 +/- 0.00033
+    coincidence (2-of-2)                n=746312  A=0.81765 +/- 0.00040
+    coin/incl = 0.9183   deuteron hits outside all z-windows = 0
+
+[RP acceptance vs theta_beam]
+  theta [mrad]       N_gen    Stat 1    Stat 2      incl    2-of-2       A_1       A_2    A_incl    A_coin  coin/incl
+    0.0   1.2  667375    609677    629156    639538    599295    0.9135    0.9427    0.9583    0.8980     0.9371
+    1.2   2.5  221039    151827    152804    163690    140941    0.6869    0.6913    0.7405    0.6376     0.8610
+    2.5   3.8   21126      7949      6243      8742      5450    0.3763    0.2955    0.4138    0.2580     0.6234
+    3.8   5.0    2064       643       588       669       562    0.3115    0.2849    0.3241    0.2723     0.8401
+    5.0   6.2     620        70        65        75        60    0.1129    0.1048    0.1210    0.0968     0.8000
+    6.2   7.5     311         6         4         6         4    0.0193    0.0129    0.0193    0.0129     0.6667
+    7.5   8.8     139         0         0         0         0    0.0000    0.0000    0.0000    0.0000     0.0000
+    8.8  10.0      50         0         0         0         0    0.0000    0.0000    0.0000    0.0000     0.0000

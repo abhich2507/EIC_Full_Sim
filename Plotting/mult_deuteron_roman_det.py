@@ -60,7 +60,7 @@ acc_stats = {
 }
 
 edges = np.linspace(0.0, 10.0, 9)
-theta_table = {k: {"ng": 0, "ni": 0, "nc": 0} for k in range(len(edges) - 1)}
+theta_table = {k: {"ng": 0, "n1": 0, "n2": 0, "ni": 0, "nc": 0} for k in range(len(edges) - 1)}
 
 # --- Initialize ROOT Master Histograms ---
 h_xy = {"RP": []}
@@ -76,8 +76,8 @@ for key in STATIONS:
         h_xy[key].append(h)
 
 VARS_DEF = [
-    ("p",     "p [GeV]",               60, 0.0, 100.0),
-    ("theta", "#theta_{beam} [mrad]",  60, 0.0,  5.0),
+    ("p",     "p [GeV]",               60, 40.0, 120.0),
+    ("theta", "#theta_{beam} [mrad]",  60, 0.0,  6.0),
     ("xL",    "x_{L} = p / p_{beam}",  60, 0.0,   1.3),
 ]
 h_diff = {}
@@ -257,9 +257,14 @@ for f_idx, filename in enumerate(file_list):
         h_map_d_coin.FillN(len(tv), tv, pv, np.ones(len(tv), dtype=np.float64))
 
     # 6. Accumulate Theta Table
+    bits = RES["RP"]["bits"]
+    stat1_bits = bits[0] & flat_is_sig
+    stat2_bits = bits[1] & flat_is_sig
     for k in range(len(edges) - 1):
         sl = flat_is_sig & (th_beam >= edges[k]) & (th_beam < edges[k + 1])
         theta_table[k]["ng"] += int(sl.sum())
+        theta_table[k]["n1"] += int((sl & stat1_bits).sum())
+        theta_table[k]["n2"] += int((sl & stat2_bits).sum())
         theta_table[k]["ni"] += int((sl & rp_incl).sum())
         theta_table[k]["nc"] += int((sl & rp_coin).sum())
 
@@ -311,12 +316,12 @@ for key in ["RP"]:
 
 
 print("[RP acceptance vs theta_beam]")
-print(f"  {'theta [mrad]':<16}{'N_gen':>8}{'incl':>10}{'2-of-2':>10}{'A_incl':>10}{'A_coin':>10}{'coin/incl':>11}")
+print(f"  {'theta [mrad]':<16}{'N_gen':>8}{'Stat 1':>10}{'Stat 2':>10}{'incl':>10}{'2-of-2':>10}{'A_1':>10}{'A_2':>10}{'A_incl':>10}{'A_coin':>10}{'coin/incl':>11}")
 for k in range(len(edges) - 1):
     d = theta_table[k]
     if d["ng"] == 0: continue
-    print(f"  {edges[k]:5.1f} {edges[k+1]:5.1f}{d['ng']:>8d}{d['ni']:>10d}{d['nc']:>10d}"
-          f"{d['ni']/d['ng']:>10.4f}{d['nc']/d['ng']:>10.4f}{(d['nc']/d['ni'] if d['ni'] else 0.0):>11.4f}")
+    print(f"  {edges[k]:5.1f} {edges[k+1]:5.1f}{d['ng']:>8d}{d['n1']:>10d}{d['n2']:>10d}{d['ni']:>10d}{d['nc']:>10d}"
+          f"{d['n1']/d['ng']:>10.4f}{d['n2']/d['ng']:>10.4f}{d['ni']/d['ng']:>10.4f}{d['nc']/d['ng']:>10.4f}{(d['nc']/d['ni'] if d['ni'] else 0.0):>11.4f}")
 
 
 # ==================================================================
