@@ -8,7 +8,8 @@ from pathlib import Path
 vector.register_awkward()
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
-
+ROOT.gStyle.SetTitleFontSize(0.06)  # Increases the main title sizes globally
+max_events = -1
 # Constants
 DEUTERON_PDG = 1000010020
 HE3_PDG      = 1000020030
@@ -23,20 +24,20 @@ HE3_MASS      = 2.8084    # GeV
 # Define bin edges
 Q2_bin_edges = np.logspace(0, 2, 101)
 x_bin_edges  = np.logspace(-3, 0, 101)
-theta_bin_edges = np.linspace(0, 180, 101)
+theta_bin_edges = np.linspace(0, 120, 101)
 
 # Initialize 1D Histograms
-h_p_with_d  = ROOT.TH1F("h_p_with_d",  "Electron Momentum;p_{e} [GeV];Events", 60, 0, 10)
-h_p_no_d    = ROOT.TH1F("h_p_no_d",    "Electron Momentum;p_{e} [GeV];Events", 60, 0, 10)
+h_p_with_d  = ROOT.TH1F("h_p_with_d",  " Momentum;p_{e} [GeV];Events", 60, 0, 10)
+h_p_no_d    = ROOT.TH1F("h_p_no_d",    " Momentum;p_{e} [GeV];Events", 60, 0, 10)
 
-h_Q2_with_d = ROOT.TH1F("h_Q2_with_d", "Q^{2} Distribution;Q^{2} [GeV^{2}];Events", len(Q2_bin_edges) - 1, Q2_bin_edges)
-h_Q2_no_d   = ROOT.TH1F("h_Q2_no_d",   "Q^{2} Distribution;Q^{2} [GeV^{2}];Events", len(Q2_bin_edges) - 1, Q2_bin_edges)
+h_Q2_with_d = ROOT.TH1F("h_Q2_with_d", "Q^{2};Q^{2} [GeV^{2}];Events", len(Q2_bin_edges) - 1, Q2_bin_edges)
+h_Q2_no_d   = ROOT.TH1F("h_Q2_no_d",   "Q^{2};Q^{2} [GeV^{2}];Events", len(Q2_bin_edges) - 1, Q2_bin_edges)
 
-h_x_with_d  = ROOT.TH1F("h_x_with_d",  "Bjorken x Distribution;x_{B};Events", len(x_bin_edges) - 1, x_bin_edges)
-h_x_no_d    = ROOT.TH1F("h_x_no_d",    "Bjorken x Distribution;x_{B};Events", len(x_bin_edges) - 1, x_bin_edges)
+h_x_with_d  = ROOT.TH1F("h_x_with_d",  "x_{B};x_{B};Events", len(x_bin_edges) - 1, x_bin_edges)
+h_x_no_d    = ROOT.TH1F("h_x_no_d",    "x_{B};x_{B};Events", len(x_bin_edges) - 1, x_bin_edges)
 
-h_theta_with_d  = ROOT.TH1F("h_theta_with_d",  "Electron Polar Angle;#theta [deg];Events", len(theta_bin_edges) - 1, theta_bin_edges)
-h_theta_no_d    = ROOT.TH1F("h_theta_no_d",    "Electron Polar Angle;#theta [deg];Events", len(theta_bin_edges) - 1, theta_bin_edges)
+h_theta_with_d  = ROOT.TH1F("h_theta_with_d",  " Polar Angle;#theta [deg];Events", len(theta_bin_edges) - 1, theta_bin_edges)
+h_theta_no_d    = ROOT.TH1F("h_theta_no_d",    " Polar Angle;#theta [deg];Events", len(theta_bin_edges) - 1, theta_bin_edges)
 
 # Initialize 2D Histograms
 h2_x_Q2_with_d = ROOT.TH2F("h2_x_Q2_with_d", "x_{B} vs Q^{2} (e- With RP deuteron coin);Q^{2} [GeV^{2}];x_{B}", len(Q2_bin_edges) - 1, Q2_bin_edges, len(x_bin_edges) - 1, x_bin_edges)
@@ -59,8 +60,8 @@ total_e_with = 0
 total_e_no   = 0
 
 for f_dx, filepath in enumerate(file_list):
-    # if f_dx == 10:  # Remove this break to run on all files
-    #     break
+    if f_dx == max_events:  
+        break
     filename = str(filepath)
     print(f"Processing file {f_dx+1}/{len(file_list)}: {filename}")
     
@@ -119,7 +120,7 @@ for f_dx, filepath in enumerate(file_list):
         Q2     = -q.mass2
         x_B    = 3.0 * Q2 / (2.0 * p_beam_single.dot(q))
 
-        # 5. Split and Fill (No flattening needed since everything is exactly 1-per-event now)
+        # 5. Split and Fill 
         p_with_d  = ak.to_numpy(ak.drop_none(elec_p[event_has_rp_deuteron])).astype(np.float64)
         p_no_d    = ak.to_numpy(ak.drop_none(elec_p[~event_has_rp_deuteron])).astype(np.float64)
 
@@ -160,47 +161,52 @@ if (total_e_no + total_e_with) > 0:
     print(f"Fraction of electrons with RP deuteron coincidence: {total_e_with/(total_e_no+total_e_with):.4f}")
 
 
-
+# Apply larger cosmetics to all 1D histograms
 for h in (h_p_with_d, h_p_no_d, h_Q2_with_d, h_Q2_no_d, h_x_with_d, h_x_no_d, h_theta_with_d, h_theta_no_d):
-    h.GetXaxis().SetTitleSize(0.05)
-    h.GetYaxis().SetTitleSize(0.05)
-   # h.GetXaxis().SetTitleOffset(1.1)  # Pushes the X-axis title down slightly
-    #h.GetYaxis().SetTitleOffset(1.3)  # Pushes the Y-axis title left slightly
+    h.GetXaxis().SetTitleSize(0.055)
+    h.GetYaxis().SetTitleSize(0.055)
+    h.GetXaxis().SetLabelSize(0.06)
+    h.GetYaxis().SetLabelSize(0.06)
+    h.GetXaxis().SetTitleOffset(1.2)  
+    h.GetYaxis().SetTitleOffset(1.45)  
+    h.GetXaxis().CenterTitle(True)
+    h.GetYaxis().CenterTitle(True)
+
+# Helper function to apply tight margins across all canvases
+def apply_tight_margins():
+    ROOT.gPad.SetLeftMargin(0.18)   # Increased left margin to fit big Y title
+    ROOT.gPad.SetRightMargin(0.05)
+    ROOT.gPad.SetBottomMargin(0.16) # Increased bottom margin to fit big X title
+    ROOT.gPad.SetTopMargin(0.10)
+
 # ==========================================
 # Canvas 1: 1D Kinematics
 # ==========================================
 c1 = ROOT.TCanvas("c1", "Kinematics with/without RP Deuteron", 1500, 1500)
-
-# 1. Create a sub-pad that stops at y=0.92, leaving the top 8% of c1 blank
 main_pad = ROOT.TPad("main_pad", "main_pad", 0.0, 0.0, 1.0, 0.92)
 main_pad.Draw()
 main_pad.Divide(2, 2)
 
-# 2. Draw in the sub-pads (use main_pad.cd instead of c1.cd)
-main_pad.cd(1); ROOT.gPad.SetLogy()
-ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+main_pad.cd(1); ROOT.gPad.SetLogy(); apply_tight_margins()
 h_p_no_d.Draw("HIST")
 h_p_with_d.Draw("HIST SAME")
 
-
-main_pad.cd(2); ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy()
-ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
-h_Q2_no_d.Draw("HIST")
-h_Q2_with_d.Draw("HIST SAME")
-
-main_pad.cd(3); ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy()
-ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
-h_x_no_d.Draw("HIST")
-h_x_with_d.Draw("HIST SAME")
-
-main_pad.cd(4); ROOT.gPad.SetLogy()
-ROOT.gPad.SetLeftMargin(0.15); ROOT.gPad.SetRightMargin(0.05); ROOT.gPad.SetBottomMargin(0.15)
+main_pad.cd(2); ROOT.gPad.SetLogy(); apply_tight_margins()
 h_theta_no_d.Draw("HIST")
 h_theta_with_d.Draw("HIST SAME")
 
-# 3. Draw Global Legend ON the main canvas (c1) in the reserved empty space
+main_pad.cd(3); ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy(); apply_tight_margins()
+h_Q2_no_d.Draw("HIST")
+h_Q2_with_d.Draw("HIST SAME")
+
+main_pad.cd(4); ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy(); apply_tight_margins()
+h_x_no_d.Draw("HIST")
+h_x_with_d.Draw("HIST SAME")
+
+
+
 c1.cd(0)  
-leg = ROOT.TLegend(0.02, 0.93, 0.95, 0.99) # Fits perfectly in the >0.92 area
+leg = ROOT.TLegend(0.02, 0.93, 0.95, 0.99) 
 leg.SetTextSize(0.025)
 leg.SetBorderSize(0)
 leg.SetFillStyle(0)
@@ -213,29 +219,130 @@ leg.Draw()
 c1.Print("../Plots/recon_electrons_rp_coincidence.pdf[")
 c1.Print("../Plots/recon_electrons_rp_coincidence.pdf")
 
+# ==========================================
+# Canvas 2: Bin-wise Coincidence Fractions
+# ==========================================
+c_ratio = ROOT.TCanvas("c_ratio", "Bin-wise Coincidence Ratio", 1500, 1500)
+c_ratio.Divide(2, 2)
+
+def draw_coincidence_fraction(pad_num, h_with, h_without, title, is_logx=False):
+    c_ratio.cd(pad_num)
+    if is_logx: ROOT.gPad.SetLogx()
+    apply_tight_margins()
+    ROOT.gPad.SetGridy()
+    
+    # Calculate Inclusive (Total) = With + Without
+    h_tot = h_with.Clone(f"{h_with.GetName()}_tot")
+    h_tot.Add(h_without)
+    
+    h_ratio = h_with.Clone(f"{h_with.GetName()}_ratio")
+    # Using 'B' to calculate the correct Binomial errors for a fraction
+    h_ratio.Divide(h_ratio, h_tot, 1.0, 1.0, "B")
+    
+    h_ratio.SetTitle(title)
+    h_ratio.GetYaxis().SetTitle("#frac{Coincidence}{Total Events}")
+    h_ratio.SetLineColor(ROOT.kMagenta)
+    h_ratio.SetMarkerStyle(20)
+    h_ratio.SetMarkerColor(ROOT.kBlack)
+    h_ratio.SetMinimum(0.0)
+    h_ratio.SetMaximum(1.1)
+    
+    h_ratio.Draw("PE")
+    return h_ratio, h_tot
+
+ratios = []
+ratios.append(draw_coincidence_fraction(1, h_p_with_d, h_p_no_d, "Momentum"))
+ratios.append(draw_coincidence_fraction(2, h_theta_with_d, h_theta_no_d, "Polar Angle ", is_logx=False))
+ratios.append(draw_coincidence_fraction(3, h_Q2_with_d, h_Q2_no_d, "Q^{2} ", is_logx=True))
+ratios.append(draw_coincidence_fraction(4, h_x_with_d, h_x_no_d, "x_{B} ", is_logx=True))
+
+
+c_ratio.Print("../Plots/recon_electrons_rp_coincidence.pdf")
+
+# ==========================================
+# Canvas 3: 2D Kinematics
+# ==========================================
 for h in (h2_x_Q2_with_d, h2_x_Q2_no_d):
-    h.GetXaxis().SetTitleSize(0.05)
-    h.GetYaxis().SetTitleSize(0.05)
-    h.GetXaxis().SetTitleOffset(1.1)  # Pushes the X-axis title down slightly
-    h.GetYaxis().SetTitleOffset(1.3)  # Pushes the Y-axis title left slightly
+    h.GetXaxis().SetTitleSize(0.055)
+    h.GetYaxis().SetTitleSize(0.055)
+    h.GetXaxis().SetLabelSize(0.05)
+    h.GetYaxis().SetLabelSize(0.05)
+    h.GetXaxis().SetTitleOffset(1.2)  
+    h.GetYaxis().SetTitleOffset(1.4)
+    h.GetXaxis().CenterTitle(True)
+    h.GetYaxis().CenterTitle(True)
 
 c2 = ROOT.TCanvas("c2", "2D Kinematics", 1800, 900)
 c2.Divide(2, 1)
 
 c2.cd(1)
-ROOT.gPad.SetLeftMargin(0.15)   # Creates space on the left for the larger Y-axis title
-ROOT.gPad.SetRightMargin(0.15)  # Keeps the space on the right for the color bar
-ROOT.gPad.SetBottomMargin(0.15)  # Creates space on the bottom for the larger X-axis title
+apply_tight_margins()
+ROOT.gPad.SetRightMargin(0.18)  
+
 ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogz()
 h2_x_Q2_with_d.Draw("COLZ")
 
 c2.cd(2)
-ROOT.gPad.SetLeftMargin(0.15)   
-ROOT.gPad.SetRightMargin(0.15)  
-ROOT.gPad.SetBottomMargin(0.15)  # Creates space on the bottom for the larger X-axis title
+apply_tight_margins()
+ROOT.gPad.SetRightMargin(0.18)
 ROOT.gPad.SetLogx(); ROOT.gPad.SetLogy(); ROOT.gPad.SetLogz()
 h2_x_Q2_no_d.Draw("COLZ")
-
-# Save second canvas and close PDF
+# Save final canvas and close PDF bracket
 c2.Print("../Plots/recon_electrons_rp_coincidence.pdf")
+
+c3 = ROOT.TCanvas("c3", "2D Coincidence Fraction", 1000, 800)
+c3.cd()
+
+# 1. Calculate the Total (With + Without)
+h2_tot = h2_x_Q2_with_d.Clone("h2_tot")
+h2_tot.Add(h2_x_Q2_no_d)
+
+# 2. Calculate the proper fraction (With / Total) using Binomial errors
+h2_frac = h2_x_Q2_with_d.Clone("h2_frac")
+h2_frac.Divide(h2_frac, h2_tot, 1.0, 1.0, "B")
+
+h2_frac.SetTitle("D2 Coincidence Fraction;Q^{2} [GeV^{2}];x_{B}")
+
+# Global cosmetics for this specific 2D plot
+h2_frac.GetXaxis().SetTitleSize(0.055)
+h2_frac.GetYaxis().SetTitleSize(0.055)
+h2_frac.GetXaxis().SetLabelSize(0.05)
+h2_frac.GetYaxis().SetLabelSize(0.05)
+h2_frac.GetXaxis().SetTitleOffset(1.2)  
+h2_frac.GetYaxis().SetTitleOffset(1.4)
+h2_frac.GetXaxis().CenterTitle(True)
+h2_frac.GetYaxis().CenterTitle(True)
+
+# 3. Pad setup
+ROOT.gPad.SetLogx()
+ROOT.gPad.SetLogy()
+# DO NOT use SetLogz() here. Fractions go from 0 to 1, so a linear color scale is best.
+
+apply_tight_margins()
+ROOT.gPad.SetRightMargin(0.18)  # Creates wide space on the right so the Z-axis numbers fit
+
+# Force the color scale to strictly span 0 to 100%
+# h2_frac.SetMinimum(0.0)
+# h2_frac.SetMaximum(1.0)
+
+h2_frac.Draw("COLZ")
+
+ROOT.gPad.Update()  # CRITICAL: ROOT doesn't create the palette object until the pad is updated
+palette = h2_frac.GetListOfFunctions().FindObject("palette")
+if palette:
+    # Since RightMargin is 0.15, the plot frame ends exactly at X = 0.85.
+    # Place the color bar just outside it at 0.855.
+    palette.SetX1NDC(0.855)  # Left edge of color bar
+    palette.SetX2NDC(0.885)  # Right edge of color bar
+    
+    # Increase the Z-axis number sizes so they match your large X and Y labels
+    h2_frac.GetZaxis().SetLabelSize(0.05)
+    
+    # Refresh to apply the shifts
+    ROOT.gPad.Modified()
+    ROOT.gPad.Update()
+
+c3.Print("../Plots/recon_electrons_rp_coincidence.pdf")
+
+
 c1.Print("../Plots/recon_electrons_rp_coincidence.pdf]")
