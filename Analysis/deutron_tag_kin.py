@@ -21,6 +21,10 @@ BEAM_GEN_STATUS = 4  # Beam MC particles
 ELECTRON_MASS = 0.000511  # GeV
 HE3_MASS      = 2.8084    # GeV
 
+TARGET_IL = 1500000.0  # 1.5 fb-1 converted to /nb
+GENERATED_IL = 4914.32 # /nb (from generator output)
+EVENT_WEIGHT = TARGET_IL / GENERATED_IL  # ~305.23
+
 # Define bin edges
 Q2_bin_edges = np.logspace(0, 2, 101)
 x_bin_edges  = np.logspace(-3, 0, 101)
@@ -50,7 +54,10 @@ for h in (h_p_with_d, h_Q2_with_d, h_x_with_d, h_theta_with_d):
 for h in (h_p_no_d, h_Q2_no_d, h_x_no_d, h_theta_no_d):
     h.SetLineColor(ROOT.kBlue)
     h.SetLineWidth(2)
-
+#global styling for all histograms
+for h in (h_p_with_d, h_Q2_with_d, h_x_with_d, h_theta_with_d, h_p_no_d, h_Q2_no_d, h_x_no_d, h_theta_no_d, h2_x_Q2_with_d, h2_x_Q2_no_d):
+    h.Sumw2()
+    
 # File list setup
 dir_path  = Path("/work/eic/users/aabhishe/Recon_out_1M")
 file_list = list(dir_path.glob("recon_chunk_*.root"))
@@ -133,22 +140,25 @@ for f_dx, filepath in enumerate(file_list):
         theta_with_d  = ak.to_numpy(ak.drop_none(elec_theta[event_has_rp_deuteron])).astype(np.float64)
         theta_no_d    = ak.to_numpy(ak.drop_none(elec_theta[~event_has_rp_deuteron])).astype(np.float64)
 
-        if len(p_with_d) > 0:  h_p_with_d.FillN(len(p_with_d), p_with_d, np.ones(len(p_with_d)))
-        if len(p_no_d) > 0:    h_p_no_d.FillN(len(p_no_d), p_no_d, np.ones(len(p_no_d)))
+        weights_with_d = np.ones(len(p_with_d)) * EVENT_WEIGHT
+        weights_no_d   = np.ones(len(p_no_d)) * EVENT_WEIGHT
+
+        if len(p_with_d) > 0:  h_p_with_d.FillN(len(p_with_d), p_with_d, weights_with_d)
+        if len(p_no_d) > 0:    h_p_no_d.FillN(len(p_no_d), p_no_d, weights_no_d)
         
-        if len(Q2_with_d) > 0: h_Q2_with_d.FillN(len(Q2_with_d), Q2_with_d, np.ones(len(Q2_with_d)))
-        if len(Q2_no_d) > 0:   h_Q2_no_d.FillN(len(Q2_no_d), Q2_no_d, np.ones(len(Q2_no_d)))
+        if len(Q2_with_d) > 0: h_Q2_with_d.FillN(len(Q2_with_d), Q2_with_d, weights_with_d)
+        if len(Q2_no_d) > 0:   h_Q2_no_d.FillN(len(Q2_no_d), Q2_no_d, weights_no_d)
         
-        if len(x_with_d) > 0:  h_x_with_d.FillN(len(x_with_d), x_with_d, np.ones(len(x_with_d)))
-        if len(x_no_d) > 0:    h_x_no_d.FillN(len(x_no_d), x_no_d, np.ones(len(x_no_d)))
+        if len(x_with_d) > 0:  h_x_with_d.FillN(len(x_with_d), x_with_d, weights_with_d)
+        if len(x_no_d) > 0:    h_x_no_d.FillN(len(x_no_d), x_no_d, weights_no_d)
         
-        if len(theta_with_d) > 0:  h_theta_with_d.FillN(len(theta_with_d), theta_with_d, np.ones(len(theta_with_d)))
-        if len(theta_no_d) > 0:    h_theta_no_d.FillN(len(theta_no_d), theta_no_d, np.ones(len(theta_no_d)))
+        if len(theta_with_d) > 0:  h_theta_with_d.FillN(len(theta_with_d), theta_with_d, weights_with_d)
+        if len(theta_no_d) > 0:    h_theta_no_d.FillN(len(theta_no_d), theta_no_d, weights_no_d)
         
         if len(x_with_d) > 0 and len(Q2_with_d) > 0: 
-            h2_x_Q2_with_d.FillN(len(x_with_d), Q2_with_d, x_with_d, np.ones(len(x_with_d)))
+            h2_x_Q2_with_d.FillN(len(x_with_d), Q2_with_d, x_with_d, weights_with_d)
         if len(x_no_d) > 0 and len(Q2_no_d) > 0: 
-            h2_x_Q2_no_d.FillN(len(x_no_d), Q2_no_d, x_no_d, np.ones(len(x_no_d)))
+            h2_x_Q2_no_d.FillN(len(x_no_d), Q2_no_d, x_no_d, weights_no_d)
 
         total_events += len(event_has_rp_deuteron)
         total_e_with += len(p_with_d)

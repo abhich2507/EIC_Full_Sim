@@ -19,6 +19,11 @@ REC_GEN_STATUS = 1  # Final-state MC particles
 MASS_ELECTRON = 0.000511  # GeV
 MASS_HELIUM3  = 2.8084    # GeV
 
+#Luminosity and cross-section for normalization
+TARGET_IL = 1500000.0  # 1.5 fb-1 converted to /nb
+GENERATED_IL = 4914.32 # /nb (from generator output)
+EVENT_WEIGHT = TARGET_IL / GENERATED_IL  # ~305.23
+
 # Optimized Binning
 nBins_lin = 50
 nBins_log = 40
@@ -50,6 +55,7 @@ for h in (h_rec_p, h_rec_theta, h_rec_Q2, h_rec_x, h_rec_pT):
 
 # Apply global styling to all histograms for bigger text and offsets
 for h in (h_gen_p, h_gen_theta, h_gen_Q2, h_gen_x, h_gen_pT, h_rec_p, h_rec_theta, h_rec_Q2, h_rec_x, h_rec_pT):
+    h.Sumw2()  
     h.GetXaxis().SetTitleSize(0.06)
     h.GetYaxis().SetTitleSize(0.06)
     h.GetXaxis().SetLabelSize(0.065)
@@ -148,16 +154,17 @@ for f_dx, filepath in enumerate(file_list):
         flat_mc_x      = ak.to_numpy(ak.drop_none(mc_x)).astype(np.float64)
         flat_rec_x     = ak.to_numpy(ak.drop_none(rec_x)).astype(np.float64)
 
-        if len(flat_mc_p) > 0:      h_gen_p.FillN(len(flat_mc_p), flat_mc_p, np.ones(len(flat_mc_p)))
-        if len(flat_rec_p) > 0:     h_rec_p.FillN(len(flat_rec_p), flat_rec_p, np.ones(len(flat_rec_p)))
-        if len(flat_mc_pT) > 0:     h_gen_pT.FillN(len(flat_mc_pT), flat_mc_pT, np.ones(len(flat_mc_pT)))
-        if len(flat_rec_pT) > 0:    h_rec_pT.FillN(len(flat_rec_pT), flat_rec_pT, np.ones(len(flat_rec_pT)))
-        if len(flat_mc_theta) > 0:  h_gen_theta.FillN(len(flat_mc_theta), flat_mc_theta, np.ones(len(flat_mc_theta)))
-        if len(flat_rec_theta) > 0: h_rec_theta.FillN(len(flat_rec_theta), flat_rec_theta, np.ones(len(flat_rec_theta)))
-        if len(flat_mc_Q2) > 0:     h_gen_Q2.FillN(len(flat_mc_Q2), flat_mc_Q2, np.ones(len(flat_mc_Q2)))
-        if len(flat_rec_Q2) > 0:    h_rec_Q2.FillN(len(flat_rec_Q2), flat_rec_Q2, np.ones(len(flat_rec_Q2)))
-        if len(flat_mc_x) > 0:      h_gen_x.FillN(len(flat_mc_x), flat_mc_x, np.ones(len(flat_mc_x)))
-        if len(flat_rec_x) > 0:     h_rec_x.FillN(len(flat_rec_x), flat_rec_x, np.ones(len(flat_rec_x)))    
+        weights=np.full_like(flat_mc_p, EVENT_WEIGHT, dtype=np.float64)  # Apply event weight for normalization
+        if len(flat_mc_p) > 0:      h_gen_p.FillN(len(flat_mc_p), flat_mc_p, weights)
+        if len(flat_rec_p) > 0:     h_rec_p.FillN(len(flat_rec_p), flat_rec_p, weights)
+        if len(flat_mc_pT) > 0:     h_gen_pT.FillN(len(flat_mc_pT), flat_mc_pT, weights)
+        if len(flat_rec_pT) > 0:    h_rec_pT.FillN(len(flat_rec_pT), flat_rec_pT, weights)
+        if len(flat_mc_theta) > 0:  h_gen_theta.FillN(len(flat_mc_theta), flat_mc_theta, weights)
+        if len(flat_rec_theta) > 0: h_rec_theta.FillN(len(flat_rec_theta), flat_rec_theta, weights)
+        if len(flat_mc_Q2) > 0:     h_gen_Q2.FillN(len(flat_mc_Q2), flat_mc_Q2, weights)
+        if len(flat_rec_Q2) > 0:    h_rec_Q2.FillN(len(flat_rec_Q2), flat_rec_Q2, weights)
+        if len(flat_mc_x) > 0:      h_gen_x.FillN(len(flat_mc_x), flat_mc_x, weights)
+        if len(flat_rec_x) > 0:     h_rec_x.FillN(len(flat_rec_x), flat_rec_x, weights)
 
 print("\n--- Electron Acceptance Summary ---")
 print(f"Total generated electrons: {generated_electron_count}") 
