@@ -5,7 +5,7 @@ import awkward as ak
 import uproot
 from pathlib import Path
 
-MAX_EVENTS = 20
+MAX_EVENTS = -1
 # ==================================================================
 # Setup & Constants
 # ==================================================================
@@ -43,12 +43,14 @@ print(f"Plots will be saved to: {OUT_DIR}")
 # ==================================================================
 # Master Dictionaries & Histograms (Accumulators for all files)
 # ==================================================================
+sensor_window_z = 5 #mm
+L1_z, L2_z, L3_z, L4_z = 32547.3, 32567.3, 34245.5, 34265.5
 STATIONS = {
     "RP": [
-        ("S1 Layer 1 (z=32547.3 mm)", 32540.0, 32555.0, (100, -1300., -950.), (100, -90., 90.)),
-        ("S1 Layer 2 (z=32567.3 mm)", 32560.0, 32575.0, (100, -1300., -950.), (100, -90., 90.)),
-        ("S2 Layer 1 (z=34245.5 mm)", 34238.0, 34253.0, (100, -1400., -1050.), (100, -90., 90.)),
-        ("S2 Layer 2 (z=34265.5 mm)", 34258.0, 34273.0, (100, -1400., -1050.), (100, -90., 90.)),
+        (f"S1 Layer 1 (z={L1_z} mm)", L1_z - sensor_window_z, L1_z + sensor_window_z, (100, -1300., -950.), (100, -90., 90.)),
+        (f"S1 Layer 2 (z={L2_z} mm)", L2_z - sensor_window_z, L2_z + sensor_window_z, (100, -1300., -950.), (100, -90., 90.)),
+        (f"S2 Layer 1 (z={L3_z} mm)", L3_z - sensor_window_z, L3_z + sensor_window_z, (100, -1400., -1050.), (100, -90., 90.)),
+        (f"S2 Layer 2 (z={L4_z} mm)", L4_z - sensor_window_z, L4_z + sensor_window_z, (100, -1400., -1050.), (100, -90., 90.)),
     ]
 }
 
@@ -165,7 +167,7 @@ def binom_err(k, n):
 print(f"Starting chunked processing for {len(file_list)} files...\n")
 
 for f_idx, filename in enumerate(file_list):
-    if f_idx >= MAX_EVENTS:
+    if f_idx == MAX_EVENTS:
         break
     if not os.path.exists(filename):
         print(f"WARNING: File {filename} not found. Skipping.")
