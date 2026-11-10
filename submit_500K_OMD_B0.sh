@@ -16,7 +16,7 @@ set -Eeuo pipefail
 # Base work directory (no trailing slash)
 WORKDIR="/work/eic/users/aabhishe"
 
-# mkdir -p logs
+
 mkdir -p "${WORKDIR}/Sim_out_1M_omd_b0"
 mkdir -p "${WORKDIR}/Recon_out_1M_omd_b0"
 
@@ -38,7 +38,7 @@ mkdir -p "$JOB_TMPDIR"
 # Automatically remove temp directory and intermediate sim file on exit or crash
 trap 'rm -rf "$JOB_TMPDIR" "$SIM_FILE"' EXIT
 
-# 3. Tell Singularity/Apptainer to use this new directory
+
 export SINGULARITY_TMPDIR="$JOB_TMPDIR"
 export SINGULARITY_CACHEDIR="$JOB_TMPDIR"
 export APPTAINER_TMPDIR="$JOB_TMPDIR"
@@ -46,7 +46,7 @@ export APPTAINER_CACHEDIR="$JOB_TMPDIR"
 
 CONTAINER="/cvmfs/singularity.opensciencegrid.org/eicweb/eic_xl:nightly"
 
-# 4. Bind the custom tmp dir to /tmp inside the container and run
+
 singularity exec -B "${WORKDIR}:${WORKDIR}" -B "${JOB_TMPDIR}:/tmp" "$CONTAINER" bash -c "
     source /opt/detector/epic-main/bin/thisepic.sh
 

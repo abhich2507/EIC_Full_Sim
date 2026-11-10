@@ -5,7 +5,7 @@ import awkward as ak
 import uproot
 from pathlib import Path
 
-MAX_FILES = 50 
+MAX_FILES = -1 
 ROOT.gROOT.SetBatch(True)
 ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetPalette(ROOT.kBird)
@@ -201,7 +201,7 @@ if total_double_spectator_events > 0:
         eff_p1   = (p1_acc_count[i] / total_double_spectator_events) * 100.0
         eff_p2   = (p2_acc_count[i] / total_double_spectator_events) * 100.0
         eff_both = (double_det_count[i] / total_double_spectator_events) * 100.0
-        print(f"Station {i+1} (sys={sys_id}) | P1 Acc: {eff_p1:6.2f}% | P2 Acc: {eff_p2:6.2f}% | "
+        print(f"Station {i+1} (sys={sys_id}) | P1 eff: {eff_p1:6.2f}% | P2 eff: {eff_p2:6.2f}% | "
               f"Double Spectator Eff: {eff_both:6.2f}%")
 
     eff_coin4 = (double_coin_all4 / total_double_spectator_events) * 100.0
@@ -247,8 +247,8 @@ for i, (label, sys_id, xc, xb, yb) in enumerate(STATIONS):
     leg.SetTextSize(0.032)
     leg.SetTextFont(62)
     leg.SetTextColor(ROOT.kRed)
-    leg.AddEntry(0, f"P1 Hits: {int(h_xy_p1[i].GetEntries())} (Acc: {eff_p1:.2f}%)", "")
-    leg.AddEntry(0, f"P2 Hits: {int(h_xy_p2[i].GetEntries())} (Acc: {eff_p2:.2f}%)", "")
+    leg.AddEntry(0, f"P1 Hits: {int(h_xy_p1[i].GetEntries())} (Eff: {eff_p1:.2f}%)", "")
+    leg.AddEntry(0, f"P2 Hits: {int(h_xy_p2[i].GetEntries())} (Eff: {eff_p2:.2f}%)", "")
     leg.AddEntry(0, f"Double Spectator Eff: {eff_both:.2f}%", "")
     leg.Draw()
     legends.append(leg)
