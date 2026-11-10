@@ -124,7 +124,7 @@ for f_idx, filename in enumerate(file_list):
     mc_indices     = ak.local_index(mc_pdg)
     p_indices      = mc_indices[is_spectator_p]
 
-    has_two_protons = ak.num(p_indices) >= 2
+    has_two_protons = ak.num(p_indices) >= 1
     n_double_gen    = int(ak.sum(has_two_protons))
     total_double_spectator_events += n_double_gen
 
@@ -170,19 +170,25 @@ for f_idx, filename in enumerate(file_list):
         p1_any_station = p1_any_station | ev_has_p1
         p2_any_station = p2_any_station | ev_has_p2
 
-        x_p1 = ak.to_numpy(ak.flatten(hit_x[m_p1])).astype(np.float64)
-        y_p1 = ak.to_numpy(ak.flatten(hit_y[m_p1])).astype(np.float64)
-        if len(x_p1):
-            w1 = np.ones(len(x_p1), dtype=np.float64)
-            h_xy_p1[i].FillN(len(x_p1), x_p1, y_p1, w1)
-            h_xy_both[i].FillN(len(x_p1), x_p1, y_p1, w1)
+        x_p1_first = hit_x[m_p1]
+        y_p1_first = hit_y[m_p1]
+        x_p1_arr = ak.to_numpy(ak.drop_none(ak.firsts(x_p1_first))).astype(np.float64)
+        y_p1_arr = ak.to_numpy(ak.drop_none(ak.firsts(y_p1_first))).astype(np.float64)
 
-        x_p2 = ak.to_numpy(ak.flatten(hit_x[m_p2])).astype(np.float64)
-        y_p2 = ak.to_numpy(ak.flatten(hit_y[m_p2])).astype(np.float64)
-        if len(x_p2):
-            w2 = np.ones(len(x_p2), dtype=np.float64)
-            h_xy_p2[i].FillN(len(x_p2), x_p2, y_p2, w2)
-            h_xy_both[i].FillN(len(x_p2), x_p2, y_p2, w2)
+        if len(x_p1_arr):
+            w1 = np.ones(len(x_p1_arr), dtype=np.float64)
+            h_xy_p1[i].FillN(len(x_p1_arr), x_p1_arr, y_p1_arr, w1)
+            h_xy_both[i].FillN(len(x_p1_arr), x_p1_arr, y_p1_arr, w1)
+        
+
+        x_p2_first = hit_x[m_p2]
+        y_p2_first = hit_y[m_p2]
+        x_p2_arr = ak.to_numpy(ak.drop_none(ak.firsts(x_p2_first))).astype(np.float64)
+        y_p2_arr = ak.to_numpy(ak.drop_none(ak.firsts(y_p2_first))).astype(np.float64)
+        if len(x_p2_arr):
+            w2 = np.ones(len(x_p2_arr), dtype=np.float64)
+            h_xy_p2[i].FillN(len(x_p2_arr), x_p2_arr, y_p2_arr, w2)
+            h_xy_both[i].FillN(len(x_p2_arr), x_p2_arr, y_p2_arr, w2)
 
     ev_coin_all4 = (
         both_detected_per_station[0] &
