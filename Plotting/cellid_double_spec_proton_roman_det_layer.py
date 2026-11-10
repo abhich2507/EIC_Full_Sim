@@ -15,7 +15,8 @@ ROOT.gStyle.SetPalette(ROOT.kBird)
 ROOT.TH1.AddDirectory(False)
 
 # NEW OUTPUT DIRECTORY
-OUT_DIR = "/home/aabhishe/eic/EIC_Full_Sim/Plots/RP_Protons_D2_layer"
+# OUT_DIR = "/home/aabhishe/eic/EIC_Full_Sim/Plots/RP_Protons_D2_layer"
+OUT_DIR = "/home/aabhishe/eic/EIC_Full_Sim/Plots/Test_RP_Protons_D2_layer"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 DEUTERON   = 1000010020
@@ -24,12 +25,14 @@ GEN_STATUS = 1
 PZ_MIN     = 20.0  # GeV/c cut for true beam-momentum spectator protons
 VZ_MAX = 500.
 
-dir_path = Path("/work/eic/users/aabhishe/Recon_out_1M")
-file_count = len(list(dir_path.glob("recon_chunk_*.root")))
-file_list = [str(dir_path / f"recon_chunk_{i}.root") for i in range(file_count)]
+#dir_path = Path("/work/eic/users/aabhishe/Recon_out_1M")
+dir_path = Path("/work/eic/users/aabhishe/Test_run_pencil")
+file_count = len(list(dir_path.glob("*.root")))
+#file_list = [str(dir_path / f"recon_chunk_{i}.root") for i in range(file_count)]
+file_list = [str(f) for f in dir_path.glob("*.root")]
 print(f"Found {len(file_list)} files to process in {dir_path}.")
 print(f"Plots will be saved to: {OUT_DIR}")
-
+#/work/eic/users/aabhishe/Test_run_pencil/test_proton_gun.edm4hep.root
 # ==================================================================
 # Roman Pot cellID Bitfield Decoder (Matched to XML)
 # <id>system:8,assembly:3,layer:4,module:8,sensor:8,x:32:-16,y:-16</id>
@@ -95,9 +98,7 @@ print(f"Auto-Discovered RP Geometry -> Active Sensor Field: {ACTIVE_SENSOR}")
 for i, (s, l) in enumerate(RP_STATION_IDS):
     print(f"  Station Layer {i+1}: system={s}, layer={l}")
 
-# ==================================================================
-# Layer Definitions & Histograms
-# ==================================================================
+
 STATIONS = [
     (f"Proton S1 Layer 1", RP_STATION_IDS[0], (100, -1300., -950.), (100, -90., 90.)),
     (f"Proton S1 Layer 2", RP_STATION_IDS[1], (100, -1300., -950.), (100, -90., 90.)),
@@ -175,7 +176,7 @@ for f_idx, filename in enumerate(file_list):
     mc_indices = ak.local_index(mc_pdg)
     
     p_indices = mc_indices[is_p]
-    has_two_protons = ak.num(p_indices) >= 2
+    has_two_protons = ak.num(p_indices) >= 0
     total_double_tag_events += int(ak.sum(has_two_protons))
     
     if int(ak.sum(has_two_protons)) == 0:

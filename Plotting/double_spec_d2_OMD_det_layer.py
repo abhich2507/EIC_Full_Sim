@@ -11,20 +11,22 @@ ROOT.gStyle.SetOptStat(0)
 ROOT.gStyle.SetPalette(ROOT.kBird)
 ROOT.TH1.AddDirectory(False)
 
-dir_path = Path("/work/eic/users/aabhishe/Recon_out_1M_omd_b0")
+#dir_path = Path("/work/eic/users/aabhishe/Recon_out_1M_omd_b0")
+dir_path = Path("/work/eic/users/aabhishe/Test_run_pencil")
 OUT_DIR = "/home/aabhishe/eic/EIC_Full_Sim/Plots/OMD_Protons_layer"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 PROTON     = 2212
 GEN_STATUS = 1
-PZ_MIN     = 35.0
+PZ_MIN     = 40.9
 OFFSET_X   = 20.0
 
 file_indices = sorted(
     int(p.stem.split("_")[-1]) for p in dir_path.glob("recon_chunk_*.root")
     if p.stem.split("_")[-1].isdigit()
 )
-file_list = [str(dir_path / f"recon_chunk_{i}.root") for i in file_indices]
+#file_list = [str(dir_path / f"recon_chunk_{i}.root") for i in file_indices]
+file_list = [str(f) for f in dir_path.glob("*.root") if f.is_file() and f.suffix == ".root"]
 print(f"Found {len(file_list)} files to process in {dir_path}.")
 print(f"Plots will be saved to: {OUT_DIR}")
 
